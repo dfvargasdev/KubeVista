@@ -125,6 +125,27 @@ ipcMain.handle(
   }
 );
 
+ipcMain.handle("get-configmaps", async (_, namespace: string, cluster: string) => {
+  try {
+    return await kubeService.getConfigMaps(namespace, cluster);
+  } catch (error) {
+    console.error("Error getting configmaps:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle(
+  "update-configmap",
+  async (_, namespace: string, name: string, data: Record<string, string>, cluster: string) => {
+    try {
+      await kubeService.updateConfigMap(namespace, name, data, cluster);
+    } catch (error) {
+      console.error("Error updating configmap:", error);
+      throw error;
+    }
+  }
+);
+
 // Menu
 const template: Electron.MenuItemConstructorOptions[] = [
   {

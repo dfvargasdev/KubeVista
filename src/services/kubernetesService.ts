@@ -34,6 +34,15 @@ export interface PodExecResult {
   stderr: string;
 }
 
+export interface ConfigMap {
+  name: string;
+  namespace: string;
+  data: Record<string, string>;
+  creationTimestamp?: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+}
+
 export class KubernetesService {
   private kc: k8s.KubeConfig;
   private clients: Map<string, any> = new Map();
@@ -318,6 +327,51 @@ export class KubernetesService {
         stdout,
         stderr: message,
       };
+    }
+  }
+
+  async getConfigMaps(namespace: string, clusterName: string): Promise<ConfigMap[]> {
+    try {
+      const api = this.getV1Api(clusterName);
+      const response = await api.listNamespacedConfigMap(namespace);
+      return response.body.items.map((cm: any) => ({
+        name: cm.metadata?.name || "Unknown",
+        namespace: cm.metadata?.namespace || namespace,
+        data: cm.data || {},
+        creationTimestamp: cm.metadata?.creationTimestamp
+          ? new Date(cm.metadata.creationTimestamp).toISOString()
+          : undefined,
+        labels: cm.metadata?.labels || {},
+        annotations: cm.metadata?.annotations || {},
+      }));
+    } catch (error) {
+      console.error("Error fetching configmaps:", error);
+      throw new Error(this.getKubernetesErrorMessage(error, `configmaps en namespace "${namespace}"`));
+    }
+  }
+
+  async updateConfigMap(
+    namespace: string,
+    name: string,
+    data: Record<string, string>,
+    clusterName: string
+  ): Promise<void> {
+    try {
+      const api = this.getV1Api(clusterName);
+      // Fetch current resource version (required for optimistic locking)
+      const current = await api.readNamespacedConfigMap(name, namespace);
+      const resourceVersion = current.body.metadata?.resourceVersion;
+      await api.replaceNamespacedConfigMap(name, namespace, {
+        metadata: {
+          name,
+          namespace,
+          resourceVersion,
+        },
+        data,
+      });
+    } catch (error) {
+      console.error("Error updating configmap:", error);
+      throw new Error(this.getKubernetesErrorMessage(error, `configmap "${name}"`));
     }
   }
 

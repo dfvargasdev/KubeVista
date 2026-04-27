@@ -6,6 +6,8 @@ interface Window {
     getPodLogs: (namespace: string, podName: string, cluster: string) => Promise<string>;
     deletePod: (namespace: string, podName: string, cluster: string) => Promise<void>;
     getPodContainers: (namespace: string, podName: string, cluster: string) => Promise<string[]>;
+    getConfigMaps: (namespace: string, cluster: string) => Promise<any[]>;
+    updateConfigMap: (namespace: string, name: string, data: Record<string, string>, cluster: string) => Promise<void>;
     execPodCommand: (
       namespace: string,
       podName: string,
