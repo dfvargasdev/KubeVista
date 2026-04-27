@@ -1,0 +1,45 @@
+{
+  "appId": "com.lens-alternativa.app",
+  "productName": "Lens Alternativa",
+  "files": [
+    "dist/**/*",
+    "node_modules/**/*",
+    "public/**/*"
+  ],
+  "directories": {
+    "buildResources": "public",
+    "output": "out"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "mac": {
+    "target": [
+      "dmg",
+      "zip"
+    ]
+  },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb"
+    ]
+  }
+}

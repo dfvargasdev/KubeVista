@@ -1,0 +1,64 @@
+{
+  "name": "lens-alternativa",
+  "version": "0.1.0",
+  "description": "Kubernetes cluster manager - Alternative to Lens",
+  "main": "dist/main.js",
+  "homepage": "./",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& cross-env NODE_ENV=development concurrently \"react-scripts start\" \"tsc -w\" \"wait-on http://localhost:3000 dist/main.js && cross-env NODE_ENV=development electron .\"",
+    "react-dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts start",
+    "electron-dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& tsc && cross-env NODE_ENV=development electron .",
+    "build": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts build && tsc && electron-builder",
+    "react-build": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts build",
+    "electron-build": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& electron-builder",
+    "compile": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& tsc",
+    "start": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& cross-env NODE_ENV=production electron .",
+    "test": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts test",
+    "eject": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts eject"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "0.17.0",
+    "axios": "^1.7.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.4.7",
+    "recharts": "^2.10.3",
+    "react-icons": "^5.0.1",
+    "tailwindcss": "^3.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/electron": "^1.6.10",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.1.0",
+    "typescript": "^4.9.5",
+    "react-scripts": "5.0.1",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "web-vitals": "^3.5.0",
+    "cross-env": "^7.0.3"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
