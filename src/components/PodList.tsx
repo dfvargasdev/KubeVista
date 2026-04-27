@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useClusterStore } from "../store/clusterStore";
-import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload } from "react-icons/fi";
+import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal } from "react-icons/fi";
 
 const RefreshIcon = FiRefreshCw as React.ElementType;
 const FileTextIcon = FiFileText as React.ElementType;
@@ -8,6 +8,7 @@ const TrashIcon = FiTrash2 as React.ElementType;
 const SearchIcon = FiSearch as React.ElementType;
 const CloseIcon = FiX as React.ElementType;
 const DownloadIcon = FiDownload as React.ElementType;
+const TerminalIcon = FiTerminal as React.ElementType;
 
 const SEARCH_KEY = "pod-search-filter";
 
@@ -48,6 +49,12 @@ export const PodList: React.FC = () => {
   const [recoveries, setRecoveries] = useState<Record<string, RecoveryState>>({});
   const [search, setSearch] = useState(loadSearchFilter);
   const [expandedLogPod, setExpandedLogPod] = useState<string | null>(null);
+  const [terminalPod, setTerminalPod] = useState<string | null>(null);
+  const [terminalContainers, setTerminalContainers] = useState<string[]>([]);
+  const [terminalContainer, setTerminalContainer] = useState<string>("");
+  const [terminalCommand, setTerminalCommand] = useState<string>("");
+  const [terminalOutput, setTerminalOutput] = useState<string>("");
+  const [terminalRunning, setTerminalRunning] = useState<boolean>(false);
 
   useEffect(() => {
     if (selectedCluster && selectedNamespace) {
@@ -247,6 +254,66 @@ export const PodList: React.FC = () => {
     }
   };
 
+  const openTerminal = async (podName: string) => {
+    if (!selectedCluster || !selectedNamespace) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const containers = await window.api.getPodContainers(
+        selectedNamespace,
+        podName,
+        selectedCluster.name
+      );
+
+      setTerminalPod(podName);
+      setTerminalContainers(containers);
+      setTerminalContainer(containers[0] || "");
+      setTerminalCommand("");
+      setTerminalOutput(`# Terminal del pod ${podName}\n`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "No se pudieron cargar contenedores del pod");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const closeTerminal = () => {
+    setTerminalPod(null);
+    setTerminalContainers([]);
+    setTerminalContainer("");
+    setTerminalCommand("");
+    setTerminalOutput("");
+    setTerminalRunning(false);
+  };
+
+  const runTerminalCommand = async () => {
+    if (!selectedCluster || !selectedNamespace || !terminalPod || !terminalContainer) return;
+    const command = terminalCommand.trim();
+    if (!command) return;
+
+    setTerminalRunning(true);
+    setTerminalOutput((prev) => `${prev}\n$ ${command}\n`);
+    try {
+      const result = await window.api.execPodCommand(
+        selectedNamespace,
+        terminalPod,
+        terminalContainer,
+        selectedCluster.name,
+        command
+      );
+
+      const chunk = [result.stdout, result.stderr].filter(Boolean).join("\n");
+      setTerminalOutput((prev) => `${prev}${chunk ? `${chunk}\n` : "(sin salida)\n"}`);
+      setTerminalCommand("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error ejecutando comando";
+      setTerminalOutput((prev) => `${prev}${message}\n`);
+    } finally {
+      setTerminalRunning(false);
+    }
+  };
+
   if (!selectedCluster || !selectedNamespace) {
     return (
       <div className="p-8 text-center text-gray-500">
@@ -335,7 +402,7 @@ export const PodList: React.FC = () => {
               <div className="w-20">Memory</div>
               <div className="w-16">Restarts</div>
               <div className="w-12">Age</div>
-              <div className="w-20">Actions</div>
+              <div className="w-28">Actions</div>
             </div>
 
             {filteredPods.map((pod) => (
@@ -358,13 +425,20 @@ export const PodList: React.FC = () => {
                   <div className="w-20 text-sm text-gray-700">{pod.memory || "-"}</div>
                   <div className="w-16 text-sm font-medium text-gray-900">{pod.restarts}</div>
                   <div className="w-12 text-sm text-gray-600">{pod.age || "-"}</div>
-                  <div className="w-20 flex items-center gap-2">
+                  <div className="w-28 flex items-center gap-2">
                     <button
                       onClick={() => handleViewLogs(pod.name)}
                       className="p-1 hover:bg-gray-200 rounded transition"
                       title="View logs"
                     >
                       <FileTextIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => openTerminal(pod.name)}
+                      className="p-1 hover:bg-gray-200 rounded transition"
+                      title="Abrir terminal del pod"
+                    >
+                      <TerminalIcon className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => downloadLogs(pod.name)}
@@ -450,6 +524,78 @@ export const PodList: React.FC = () => {
               <button
                 onClick={() => setExpandedLogPod(null)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal terminal pod */}
+      {terminalPod && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Terminal: {terminalPod}</h3>
+                <p className="text-xs text-gray-500">Namespace: {selectedNamespace}</p>
+              </div>
+              <button
+                onClick={closeTerminal}
+                className="p-1 hover:bg-gray-100 rounded transition"
+              >
+                <CloseIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+              <label className="text-xs text-gray-600">Contenedor</label>
+              <select
+                value={terminalContainer}
+                onChange={(e) => setTerminalContainer(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+              >
+                {terminalContainers.map((container) => (
+                  <option key={container} value={container}>{container}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={terminalCommand}
+                onChange={(e) => setTerminalCommand(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !terminalRunning) {
+                    void runTerminalCommand();
+                  }
+                }}
+                placeholder="Escribe un comando (ej: printenv | grep REDIS)"
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={terminalRunning}
+              />
+              <button
+                onClick={() => void runTerminalCommand()}
+                disabled={terminalRunning || !terminalCommand.trim() || !terminalContainer}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {terminalRunning ? "Ejecutando..." : "Ejecutar"}
+              </button>
+            </div>
+
+            <pre className="flex-1 overflow-auto text-xs bg-gray-900 text-green-400 p-4 font-mono whitespace-pre-wrap break-words">
+              {terminalOutput || "Terminal vacia."}
+            </pre>
+
+            <div className="border-t border-gray-200 p-3 bg-gray-50 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setTerminalOutput("")}
+                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+              >
+                Limpiar salida
+              </button>
+              <button
+                onClick={closeTerminal}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
               >
                 Cerrar
               </button>
