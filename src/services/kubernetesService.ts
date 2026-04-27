@@ -1,5 +1,8 @@
 import * as k8s from "@kubernetes/client-node";
-import { Writable } from "stream";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export interface Cluster {
   name: string;
@@ -23,6 +26,12 @@ export interface Namespace {
   name: string;
   status: string;
   age?: string;
+}
+
+export interface PodExecResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
 }
 
 export class KubernetesService {
@@ -147,58 +156,55 @@ export class KubernetesService {
     lines: number = 100
   ): Promise<string> {
     try {
-      return await this.runWithTlsFallback(clusterName, async () => {
+      // Get container list first via REST API (reliable)
       const api = this.getV1Api(clusterName);
       const pod = await api.readNamespacedPod(podName, namespace);
       const containerNames = (pod.body.spec?.containers || [])
         .map((c: any) => c.name)
         .filter((name: string | undefined): name is string => Boolean(name));
 
-      if (containerNames.length === 0) {
-        throw new Error(`El pod ${podName} no tiene contenedores definidos.`);
-      }
+      // Prefer app container over service mesh sidecars
+      const preferredContainers = containerNames.length > 0
+        ? [
+            ...containerNames.filter((name) => name !== "istio-proxy"),
+            ...containerNames.filter((name) => name === "istio-proxy"),
+          ]
+        : [undefined]; // no container flag = kubectl picks default
 
-      // Prefer app container over service mesh sidecars when possible.
-      const preferredContainers = [
-        ...containerNames.filter((name) => name !== "istio-proxy"),
-        ...containerNames.filter((name) => name === "istio-proxy"),
-      ];
-
-      const log = new k8s.Log(this.kc);
       const errors: string[] = [];
 
       for (const containerName of preferredContainers) {
-        const chunks: Buffer[] = [];
-        const logStream = new Writable({
-          write(chunk: Buffer, _encoding: string, callback: () => void) {
-            chunks.push(chunk);
-            callback();
-          },
-        });
-
         try {
-          await new Promise<void>((resolve, reject) => {
-            log.log(namespace, podName, containerName, logStream, { tailLines: lines })
-              .then(() => logStream.on("finish", resolve))
-              .catch(reject);
-          });
+          const args = [
+            "logs",
+            podName,
+            "--namespace", namespace,
+            "--context", clusterName,
+            `--tail=${lines}`,
+          ];
+          if (containerName) {
+            args.push("--container", containerName);
+          }
 
-          const output = Buffer.concat(chunks).toString();
-          return output.length > 0
-            ? output
-            : `No hay logs disponibles para ${podName} (contenedor: ${containerName}).`;
+          const { stdout } = await execFileAsync("kubectl", args, { maxBuffer: 10 * 1024 * 1024 });
+          return stdout.length > 0
+            ? stdout
+            : `No hay logs disponibles para ${podName}${containerName ? ` (contenedor: ${containerName})` : ""}.`;
         } catch (containerError) {
-          const msg = (containerError as any)?.body?.message
+          const msg = (containerError as any)?.stderr
             || (containerError as Error)?.message
             || "Error desconocido";
-          errors.push(`${containerName}: ${msg}`);
+          if (containerName) {
+            errors.push(`${containerName}: ${msg.trim()}`);
+          } else {
+            errors.push(msg.trim());
+          }
         }
       }
 
       throw new Error(
         `No se pudo leer logs de ${podName}. Detalles: ${errors.join(" | ")}`
       );
-      });
     } catch (error) {
       console.error("Error fetching pod logs:", error);
       if (error instanceof Error && error.message) {
@@ -249,6 +255,69 @@ export class KubernetesService {
     } catch (error) {
       console.error("Error deleting pod:", error);
       throw error;
+    }
+  }
+
+  async getPodContainers(namespace: string, podName: string, clusterName: string): Promise<string[]> {
+    try {
+      const api = this.getV1Api(clusterName);
+      const pod = await api.readNamespacedPod(podName, namespace);
+      return (pod.body.spec?.containers || [])
+        .map((c: any) => c.name)
+        .filter((name: string | undefined): name is string => Boolean(name));
+    } catch (error) {
+      console.error("Error fetching pod containers:", error);
+      throw new Error(this.getKubernetesErrorMessage(error, `contenedores del pod "${podName}"`));
+    }
+  }
+
+  async execPodCommand(
+    namespace: string,
+    podName: string,
+    containerName: string,
+    clusterName: string,
+    command: string
+  ): Promise<PodExecResult> {
+    if (!command.trim()) {
+      return { success: true, stdout: "", stderr: "" };
+    }
+
+    try {
+      const args = [
+        "--context",
+        clusterName,
+        "-n",
+        namespace,
+        "exec",
+        podName,
+        "-c",
+        containerName,
+        "--",
+        "sh",
+        "-lc",
+        command,
+      ];
+
+      const result = await execFileAsync("kubectl", args, {
+        windowsHide: true,
+        maxBuffer: 1024 * 1024 * 8,
+      });
+
+      return {
+        success: true,
+        stdout: result.stdout || "",
+        stderr: result.stderr || "",
+      };
+    } catch (error: any) {
+      const stdout = error?.stdout || "";
+      const stderr = error?.stderr || "";
+      const message = stderr || stdout || error?.message || "Error ejecutando comando en pod";
+
+      return {
+        success: false,
+        stdout,
+        stderr: message,
+      };
     }
   }
 

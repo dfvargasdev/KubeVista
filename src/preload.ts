@@ -6,6 +6,14 @@ interface IpcApi {
   getNamespaces: (cluster: string) => Promise<any>;
   getPodLogs: (namespace: string, podName: string, cluster: string) => Promise<string>;
   deletePod: (namespace: string, podName: string, cluster: string) => Promise<void>;
+  getPodContainers: (namespace: string, podName: string, cluster: string) => Promise<string[]>;
+  execPodCommand: (
+    namespace: string,
+    podName: string,
+    containerName: string,
+    cluster: string,
+    command: string
+  ) => Promise<{ success: boolean; stdout: string; stderr: string }>;
 }
 
 const api: IpcApi = {
@@ -18,6 +26,10 @@ const api: IpcApi = {
     ipcRenderer.invoke("get-pod-logs", namespace, podName, cluster),
   deletePod: (namespace: string, podName: string, cluster: string) =>
     ipcRenderer.invoke("delete-pod", namespace, podName, cluster),
+  getPodContainers: (namespace: string, podName: string, cluster: string) =>
+    ipcRenderer.invoke("get-pod-containers", namespace, podName, cluster),
+  execPodCommand: (namespace: string, podName: string, containerName: string, cluster: string, command: string) =>
+    ipcRenderer.invoke("exec-pod-command", namespace, podName, containerName, cluster, command),
 };
 
 contextBridge.exposeInMainWorld("api", api);

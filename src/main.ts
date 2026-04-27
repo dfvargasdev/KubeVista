@@ -97,6 +97,34 @@ ipcMain.handle("delete-pod", async (_, namespace: string, podName: string, clust
   }
 });
 
+ipcMain.handle("get-pod-containers", async (_, namespace: string, podName: string, cluster: string) => {
+  try {
+    return await kubeService.getPodContainers(namespace, podName, cluster);
+  } catch (error) {
+    console.error("Error getting pod containers:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle(
+  "exec-pod-command",
+  async (
+    _,
+    namespace: string,
+    podName: string,
+    containerName: string,
+    cluster: string,
+    command: string
+  ) => {
+    try {
+      return await kubeService.execPodCommand(namespace, podName, containerName, cluster, command);
+    } catch (error) {
+      console.error("Error executing pod command:", error);
+      throw error;
+    }
+  }
+);
+
 // Menu
 const template: Electron.MenuItemConstructorOptions[] = [
   {

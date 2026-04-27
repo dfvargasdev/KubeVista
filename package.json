@@ -11,6 +11,8 @@
     "react-dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts start",
     "electron-dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& tsc && cross-env NODE_ENV=development electron .",
     "build": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts build && tsc && electron-builder",
+    "package:win": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts build && tsc && electron-builder --win nsis portable",
+    "package:dir": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts build && tsc && electron-builder --dir",
     "react-build": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts build",
     "electron-build": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& electron-builder",
     "compile": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& tsc",
