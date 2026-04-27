@@ -16,6 +16,7 @@ const SEARCH_KEY = "pod-search-filter";
 const PODS_REFRESH_INTERVAL_MS = 10000;
 const LOGS_REFRESH_INTERVAL_MS = 5000;
 const SCROLL_BOTTOM_THRESHOLD_PX = 32;
+const RECOVERY_BANNER_TTL_MS = 12000;
 
 function loadSearchFilter(): string {
   try {
@@ -96,6 +97,15 @@ export const PodList: React.FC = () => {
   const inlineLogsRef = useRef<HTMLPreElement | null>(null);
   const expandedLogsRef = useRef<HTMLPreElement | null>(null);
 
+  const clearRecovery = useCallback((workloadPrefix: string) => {
+    setRecoveries((prev) => {
+      if (!prev[workloadPrefix]) return prev;
+      const next = { ...prev };
+      delete next[workloadPrefix];
+      return next;
+    });
+  }, []);
+
   const loadPods = useCallback(async (isBackground = false) => {
     if (!selectedCluster || !selectedNamespace) return;
 
@@ -163,6 +173,7 @@ export const PodList: React.FC = () => {
   useEffect(() => {
     if (selectedCluster && selectedNamespace) {
       setSelectedPods(new Set());
+      setRecoveries({});
       void loadPods();
     }
   }, [selectedCluster, selectedNamespace, loadPods]);
@@ -283,13 +294,7 @@ export const PodList: React.FC = () => {
             },
           }));
 
-          setTimeout(() => {
-            setRecoveries((prev) => {
-              const next = { ...prev };
-              delete next[workloadPrefix];
-              return next;
-            });
-          }, 3000);
+          setTimeout(() => clearRecovery(workloadPrefix), 3000);
 
           return;
         }
@@ -324,6 +329,9 @@ export const PodList: React.FC = () => {
         message: "Tiempo de espera agotado. Revisa el estado del deployment.",
       },
     }));
+
+    // Avoid stale banner lingering forever.
+    setTimeout(() => clearRecovery(workloadPrefix), RECOVERY_BANNER_TTL_MS);
   };
 
   const handleDeletePod = async (podName: string) => {
