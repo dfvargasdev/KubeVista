@@ -7,6 +7,7 @@ const SearchIcon = FiSearch as React.ElementType;
 
 const HISTORY_KEY = "ns-history";
 const LAST_NS_KEY = "last-selected-namespace";
+const LAST_NS_BY_CLUSTER_KEY = "last-selected-namespace-by-cluster";
 const MAX_HISTORY = 10;
 
 function loadHistory(): string[] {
@@ -17,14 +18,26 @@ function loadHistory(): string[] {
   }
 }
 
-function saveToHistory(ns: string): void {
+function saveToHistory(ns: string, clusterName?: string): void {
   const prev = loadHistory().filter((n) => n !== ns);
   localStorage.setItem(HISTORY_KEY, JSON.stringify([ns, ...prev].slice(0, MAX_HISTORY)));
   localStorage.setItem(LAST_NS_KEY, ns);
+
+  if (clusterName) {
+    try {
+      const map = JSON.parse(localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}") as Record<string, string>;
+      map[clusterName] = ns;
+      localStorage.setItem(LAST_NS_BY_CLUSTER_KEY, JSON.stringify(map));
+    } catch {}
+  }
 }
 
-function loadLastNamespace(): string | null {
+function loadLastNamespace(clusterName?: string): string | null {
   try {
+    if (clusterName) {
+      const map = JSON.parse(localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}") as Record<string, string>;
+      if (map[clusterName]) return map[clusterName];
+    }
     return localStorage.getItem(LAST_NS_KEY);
   } catch {
     return null;
@@ -52,14 +65,22 @@ export const NamespaceSelector: React.FC = () => {
       setManualInput("");
       setUseManual(false);
       appliedManualNsRef.current = false;
+
+      // Apply the last namespace immediately so pods can load without waiting
+      // for namespace-list RBAC calls.
+      const lastNs = loadLastNamespace(selectedCluster.name);
+      if (lastNs) {
+        setSelectedNamespace(lastNs);
+      }
+
       loadNamespaces();
     }
-  }, [selectedCluster]);
+  }, [selectedCluster, setSelectedNamespace]);
 
   useEffect(() => {
     // Cuando los namespaces cargan exitosamente y no hay namespace seleccionado
     if (!useManual && namespaces.length > 0 && !selectedNamespace) {
-      const lastNs = loadLastNamespace();
+      const lastNs = loadLastNamespace(selectedCluster?.name);
       // Si existe un último namespace guardado y está en la lista, usarlo
       if (lastNs && namespaces.some((n) => n.name === lastNs)) {
         setSelectedNamespace(lastNs);
@@ -68,19 +89,19 @@ export const NamespaceSelector: React.FC = () => {
         setSelectedNamespace(namespaces[0].name);
       }
     }
-  }, [namespaces, useManual]);
+  }, [namespaces, useManual, selectedNamespace, selectedCluster, setSelectedNamespace]);
 
   useEffect(() => {
     // Cuando falla la carga automática, pre-rellenar y aplicar automáticamente el último namespace
     if (useManual && !appliedManualNsRef.current) {
-      const lastNs = loadLastNamespace();
+      const lastNs = loadLastNamespace(selectedCluster?.name);
       if (lastNs) {
         setManualInput(lastNs);
         setSelectedNamespace(lastNs);
         appliedManualNsRef.current = true;
       }
     }
-  }, [useManual, setSelectedNamespace]);
+  }, [useManual, selectedCluster, setSelectedNamespace]);
 
   const loadNamespaces = async () => {
     if (!selectedCluster) return;
@@ -97,12 +118,21 @@ export const NamespaceSelector: React.FC = () => {
       }
     } catch (error) {
       setNamespaces([]);
-      setSelectedNamespace(null);
       setUseManual(true);
-      setError(
-        (error instanceof Error ? error.message : "Error loading namespaces") +
-          " — Puedes escribir el nombre del namespace manualmente."
-      );
+
+      const lastNs = loadLastNamespace(selectedCluster.name);
+      if (lastNs) {
+        setSelectedNamespace(lastNs);
+        setManualInput(lastNs);
+        // Don't pollute the global error banner when we already have a saved namespace
+        // and pods are loading correctly. Only show it if there's no fallback.
+        setError(null);
+      } else {
+        setError(
+          (error instanceof Error ? error.message : "Error loading namespaces") +
+            " — Puedes escribir el nombre del namespace manualmente."
+        );
+      }
       console.error("Error loading namespaces:", error);
     } finally {
       setLoading(false);
@@ -114,7 +144,7 @@ export const NamespaceSelector: React.FC = () => {
     if (!ns) return;
     setSelectedNamespace(ns);
     setError(null);
-    saveToHistory(ns);
+    saveToHistory(ns, selectedCluster?.name);
     setHistory(loadHistory());
   };
 
@@ -178,7 +208,7 @@ export const NamespaceSelector: React.FC = () => {
         value={selectedNamespace || ""}
         onChange={(e) => {
           setSelectedNamespace(e.target.value);
-          saveToHistory(e.target.value);
+          saveToHistory(e.target.value, selectedCluster?.name);
         }}
         className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
