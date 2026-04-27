@@ -7,8 +7,13 @@
   "files": [
     "dist/**/*",
     "node_modules/**/*",
-    "public/**/*",
-    "build/icon.*"
+    "build/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "build/icon.ico",
+      "to": "icon.ico"
+    }
   ],
   "directories": {
     "buildResources": "build",
