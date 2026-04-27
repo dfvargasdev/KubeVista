@@ -1,45 +1,50 @@
 {
-  "appId": "com.lens-alternativa.app",
+  "appId": "com.pichincha.lens-alternativa",
   "productName": "Lens Alternativa",
+  "copyright": "Copyright © 2026 Banco Pichincha",
+  "icon": "build/icon",
   "files": [
     "dist/**/*",
     "node_modules/**/*",
-    "public/**/*"
+    "public/**/*",
+    "build/icon.*"
   ],
   "directories": {
-    "buildResources": "public",
+    "buildResources": "build",
     "output": "out"
   },
   "win": {
+    "icon": "build/icon.ico",
+    "artifactName": "LensAlternativa-Setup-${version}.${ext}",
     "target": [
       {
         "target": "nsis",
-        "arch": [
-          "x64"
-        ]
+        "arch": ["x64"]
       },
       {
         "target": "portable",
-        "arch": [
-          "x64"
-        ]
+        "arch": ["x64"]
       }
     ]
   },
   "nsis": {
     "oneClick": false,
-    "allowToChangeInstallationDirectory": true
+    "allowToChangeInstallationDirectory": true,
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerHeaderIcon": "build/icon.ico",
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Lens Alternativa"
   },
   "mac": {
-    "target": [
-      "dmg",
-      "zip"
-    ]
+    "icon": "build/icon.png",
+    "artifactName": "LensAlternativa-${version}.${ext}",
+    "target": ["dmg", "zip"]
   },
   "linux": {
-    "target": [
-      "AppImage",
-      "deb"
-    ]
+    "icon": "build/icon.png",
+    "artifactName": "LensAlternativa-${version}.${ext}",
+    "target": ["AppImage", "deb"]
   }
 }

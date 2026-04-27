@@ -1,12 +1,13 @@
 {
   "name": "lens-alternativa",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Kubernetes cluster manager - Alternative to Lens",
   "main": "dist/main.js",
   "homepage": "./",
-  "author": "",
+  "author": "Banco Pichincha",
   "license": "MIT",
   "scripts": {
+    "build:icons": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& node scripts/create-icons.mjs",
     "dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& cross-env NODE_ENV=development concurrently \"react-scripts start\" \"tsc -w\" \"wait-on http://localhost:3000 dist/main.js && cross-env NODE_ENV=development electron .\"",
     "react-dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& react-scripts start",
     "electron-dev": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& tsc && cross-env NODE_ENV=development electron .",
@@ -25,26 +26,27 @@
     "axios": "^1.7.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "zustand": "^4.4.7",
-    "recharts": "^2.10.3",
     "react-icons": "^5.0.1",
-    "tailwindcss": "^3.4.1"
+    "recharts": "^2.10.3",
+    "tailwindcss": "^3.4.1",
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@types/electron": "^1.6.10",
     "@types/node": "^20.10.6",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
-    "@types/electron": "^1.6.10",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
     "electron": "^27.0.0",
     "electron-builder": "^24.6.4",
-    "concurrently": "^8.2.2",
-    "wait-on": "^7.1.0",
-    "typescript": "^4.9.5",
-    "react-scripts": "5.0.1",
-    "autoprefixer": "^10.4.16",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.4.32",
-    "web-vitals": "^3.5.0",
-    "cross-env": "^7.0.3"
+    "react-scripts": "5.0.1",
+    "typescript": "^4.9.5",
+    "wait-on": "^7.1.0",
+    "web-vitals": "^3.5.0"
   },
   "eslintConfig": {
     "extends": [
