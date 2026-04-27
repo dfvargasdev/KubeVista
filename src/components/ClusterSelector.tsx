@@ -5,10 +5,43 @@ import { FiChevronDown, FiRefreshCw, FiServer } from "react-icons/fi";
 const ServerIcon = FiServer as React.ElementType;
 const ChevronDownIcon = FiChevronDown as React.ElementType;
 const RefreshIcon = FiRefreshCw as React.ElementType;
+const LAST_CLUSTER_KEY = "last-selected-cluster";
+const LAST_NS_BY_CLUSTER_KEY = "last-selected-namespace-by-cluster";
+const LAST_NS_KEY = "last-selected-namespace";
+
+function loadLastClusterName(): string | null {
+  try {
+    return localStorage.getItem(LAST_CLUSTER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveLastClusterName(name: string): void {
+  try {
+    localStorage.setItem(LAST_CLUSTER_KEY, name);
+  } catch {}
+}
+
+function loadLastNamespaceForCluster(clusterName: string): string | null {
+  try {
+    const map = JSON.parse(localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}") as Record<string, string>;
+    if (map[clusterName]) return map[clusterName];
+    return localStorage.getItem(LAST_NS_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export const ClusterSelector: React.FC = () => {
-  const { clusters, selectedCluster, setSelectedCluster, setLoading, setClusters } = useClusterStore();
+  const { clusters, selectedCluster, setSelectedCluster, setSelectedNamespace, setLoading, setClusters } = useClusterStore();
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (selectedCluster?.name) {
+      saveLastClusterName(selectedCluster.name);
+    }
+  }, [selectedCluster]);
 
   useEffect(() => {
     const loadClusters = async () => {
@@ -16,8 +49,18 @@ export const ClusterSelector: React.FC = () => {
       try {
         const result = await window.api.getClusters();
         setClusters(result);
+
         if (result.length > 0 && !selectedCluster) {
-          setSelectedCluster(result[0]);
+          const lastCluster = loadLastClusterName();
+          const preferred = lastCluster
+            ? result.find((c: { name: string }) => c.name === lastCluster)
+            : null;
+          const chosenCluster = preferred || result[0];
+          const lastNs = loadLastNamespaceForCluster(chosenCluster.name);
+          // Set both in the same synchronous block so React batches them into one render.
+          // This guarantees PodList sees selectedCluster && selectedNamespace together.
+          setSelectedCluster(chosenCluster);
+          if (lastNs) setSelectedNamespace(lastNs);
         }
       } catch (error) {
         console.error("Error loading clusters:", error);
@@ -27,7 +70,7 @@ export const ClusterSelector: React.FC = () => {
     };
 
     loadClusters();
-  }, []);
+  }, [selectedCluster, setClusters, setLoading, setSelectedCluster]);
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -60,7 +103,10 @@ export const ClusterSelector: React.FC = () => {
             <button
               key={cluster.name}
               onClick={() => {
+                const lastNs = loadLastNamespaceForCluster(cluster.name);
                 setSelectedCluster(cluster);
+                if (lastNs) setSelectedNamespace(lastNs);
+                saveLastClusterName(cluster.name);
                 setIsOpen(false);
               }}
               className={`w-full text-left px-4 py-2 hover:bg-gray-100 ${

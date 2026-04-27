@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useClusterStore } from "../store/clusterStore";
 import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal, FiCopy, FiCheck } from "react-icons/fi";
 
@@ -13,6 +13,10 @@ const CopyIcon = FiCopy as React.ElementType;
 const CheckIcon = FiCheck as React.ElementType;
 
 const SEARCH_KEY = "pod-search-filter";
+const PODS_REFRESH_INTERVAL_MS = 10000;
+const LOGS_REFRESH_INTERVAL_MS = 5000;
+const SCROLL_BOTTOM_THRESHOLD_PX = 32;
+const RECOVERY_BANNER_TTL_MS = 12000;
 
 function loadSearchFilter(): string {
   try {
@@ -62,6 +66,17 @@ function buildServiceFqdn(podName: string, namespace: string): string {
   return `${deriveServiceNameFromPod(podName)}.${namespace}.svc.cluster.local`;
 }
 
+function isNearBottom(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= SCROLL_BOTTOM_THRESHOLD_PX;
+}
+
+function scrollToBottomIfNeeded(element: HTMLElement | null, force = false): void {
+  if (!element) return;
+  if (force || isNearBottom(element)) {
+    element.scrollTop = element.scrollHeight;
+  }
+}
+
 export const PodList: React.FC = () => {
   const { selectedCluster, selectedNamespace, pods, setPods, setLoading, setError } = useClusterStore();
   const [expandedPod, setExpandedPod] = useState<string | null>(null);
@@ -78,33 +93,116 @@ export const PodList: React.FC = () => {
   const [terminalRunning, setTerminalRunning] = useState<boolean>(false);
   const [copiedServiceForPod, setCopiedServiceForPod] = useState<string | null>(null);
   const [copiedServiceValue, setCopiedServiceValue] = useState<string | null>(null);
+  const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
+  const inlineLogsRef = useRef<HTMLPreElement | null>(null);
+  const expandedLogsRef = useRef<HTMLPreElement | null>(null);
 
-  useEffect(() => {
-    if (selectedCluster && selectedNamespace) {
-      loadPods();
-    }
-  }, [selectedCluster, selectedNamespace]);
+  const clearRecovery = useCallback((workloadPrefix: string) => {
+    setRecoveries((prev) => {
+      if (!prev[workloadPrefix]) return prev;
+      const next = { ...prev };
+      delete next[workloadPrefix];
+      return next;
+    });
+  }, []);
 
-  useEffect(() => {
-    saveSearchFilter(search);
-  }, [search]);
-
-  const loadPods = async () => {
+  const loadPods = useCallback(async (isBackground = false) => {
     if (!selectedCluster || !selectedNamespace) return;
 
-    setLoading(true);
-    setError(null);
-    setPods([]);
+    if (!isBackground) {
+      setLoading(true);
+      setError(null);
+      setPods([]);
+    }
+
     try {
       const result = await window.api.getPods(selectedNamespace, selectedCluster.name);
       setPods(result);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Error loading pods");
+      if (!isBackground) {
+        setError(error instanceof Error ? error.message : "Error loading pods");
+      }
       console.error("Error loading pods:", error);
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
-  };
+  }, [selectedCluster, selectedNamespace, setError, setLoading, setPods]);
+
+  const fetchPodLogs = useCallback(async (podName: string, isBackground = false) => {
+    if (!selectedCluster || !selectedNamespace) return;
+
+    if (!isBackground) {
+      setLoading(true);
+      setLogErrors((prev) => ({ ...prev, [podName]: "" }));
+    }
+
+    try {
+      const podLogs = await window.api.getPodLogs(
+        selectedNamespace,
+        podName,
+        selectedCluster.name
+      );
+      setLogs((prev) => ({ ...prev, [podName]: podLogs }));
+      setLogErrors((prev) => ({ ...prev, [podName]: "" }));
+
+      requestAnimationFrame(() => {
+        const force = !isBackground;
+        if (expandedLogPod === podName) {
+          scrollToBottomIfNeeded(expandedLogsRef.current, force);
+        } else if (expandedPod === podName) {
+          scrollToBottomIfNeeded(inlineLogsRef.current, force);
+        }
+      });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Error loading logs";
+      setLogErrors((prev) => ({ ...prev, [podName]: errorMsg }));
+      if (!isBackground) {
+        setLogs((prev) => ({ ...prev, [podName]: "" }));
+        setError(errorMsg);
+      }
+      console.error("Error loading logs:", error);
+    } finally {
+      if (!isBackground) {
+        setLoading(false);
+      }
+    }
+  }, [selectedCluster, selectedNamespace, setError, setLoading, expandedLogPod, expandedPod]);
+
+  useEffect(() => {
+    if (selectedCluster && selectedNamespace) {
+      setSelectedPods(new Set());
+      setRecoveries({});
+      void loadPods();
+    }
+  }, [selectedCluster, selectedNamespace, loadPods]);
+
+  useEffect(() => {
+    if (!selectedCluster || !selectedNamespace) return;
+    const interval = setInterval(() => {
+      void loadPods(true);
+    }, PODS_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [selectedCluster, selectedNamespace, loadPods]);
+
+  useEffect(() => {
+    // Keep selection only for pods that still exist in the current list.
+    setSelectedPods((prev) => {
+      if (prev.size === 0) return prev;
+      const names = new Set(pods.map((p) => p.name));
+      const next = new Set<string>();
+      prev.forEach((name) => {
+        if (names.has(name)) next.add(name);
+      });
+      return next;
+    });
+  }, [pods]);
+
+  useEffect(() => {
+    saveSearchFilter(search);
+  }, [search]);
 
   const getStatusColor = (status: string): string => {
     switch (status) {
@@ -122,27 +220,26 @@ export const PodList: React.FC = () => {
   const handleViewLogs = async (podName: string) => {
     if (!selectedCluster || !selectedNamespace) return;
 
-    setLoading(true);
-    setLogErrors((prev) => ({ ...prev, [podName]: "" }));
-    try {
-      const podLogs = await window.api.getPodLogs(
-        selectedNamespace,
-        podName,
-        selectedCluster.name
-      );
-      setLogs((prev) => ({ ...prev, [podName]: podLogs }));
-      setLogErrors((prev) => ({ ...prev, [podName]: "" }));
-      setExpandedPod(expandedPod === podName ? null : podName);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : "Error loading logs";
-      setLogErrors((prev) => ({ ...prev, [podName]: errorMsg }));
-      setLogs((prev) => ({ ...prev, [podName]: "" }));
-      setError(errorMsg);
-      console.error("Error loading logs:", error);
-    } finally {
-      setLoading(false);
+    if (expandedPod === podName) {
+      setExpandedPod(null);
+      return;
     }
+
+    setExpandedPod(podName);
+    await fetchPodLogs(podName, false);
   };
+
+  useEffect(() => {
+    if (!selectedCluster || !selectedNamespace) return;
+    const activePodForLogs = expandedLogPod || expandedPod;
+    if (!activePodForLogs) return;
+
+    const interval = setInterval(() => {
+      void fetchPodLogs(activePodForLogs, true);
+    }, LOGS_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [selectedCluster, selectedNamespace, expandedPod, expandedLogPod, fetchPodLogs]);
 
   const downloadLogs = (podName: string) => {
     const content = logs[podName];
@@ -197,13 +294,7 @@ export const PodList: React.FC = () => {
             },
           }));
 
-          setTimeout(() => {
-            setRecoveries((prev) => {
-              const next = { ...prev };
-              delete next[workloadPrefix];
-              return next;
-            });
-          }, 3000);
+          setTimeout(() => clearRecovery(workloadPrefix), 3000);
 
           return;
         }
@@ -238,6 +329,9 @@ export const PodList: React.FC = () => {
         message: "Tiempo de espera agotado. Revisa el estado del deployment.",
       },
     }));
+
+    // Avoid stale banner lingering forever.
+    setTimeout(() => clearRecovery(workloadPrefix), RECOVERY_BANNER_TTL_MS);
   };
 
   const handleDeletePod = async (podName: string) => {
@@ -275,6 +369,69 @@ export const PodList: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const deletePodsBulk = async (podNames: string[]) => {
+    if (!selectedCluster || !selectedNamespace || podNames.length === 0) return;
+
+    const clusterName = selectedCluster.name;
+    const namespace = selectedNamespace;
+
+    const confirmed = window.confirm(
+      `Eliminar ${podNames.length} pod(s)? Kubernetes los recreara automaticamente.`
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    setError(null);
+
+    const failures: string[] = [];
+
+    for (const podName of podNames) {
+      const workloadPrefix = getWorkloadPrefix(podName);
+
+      setRecoveries((prev) => ({
+        ...prev,
+        [workloadPrefix]: { progress: 10, message: "Eliminando pod..." },
+      }));
+
+      try {
+        await window.api.deletePod(namespace, podName, clusterName);
+        setRecoveries((prev) => ({
+          ...prev,
+          [workloadPrefix]: { progress: 20, message: "Pod eliminado. Iniciando restablecimiento..." },
+        }));
+        void monitorRecovery(workloadPrefix, podName, namespace, clusterName);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Error deleting pod";
+        failures.push(`${podName}: ${message}`);
+        setRecoveries((prev) => ({
+          ...prev,
+          [workloadPrefix]: { progress: 100, message },
+        }));
+      }
+    }
+
+    setSelectedPods(new Set());
+
+    if (failures.length > 0) {
+      setError(`Fallo al eliminar ${failures.length} pod(s). Revisa detalles en consola.`);
+      console.error("Bulk delete failures:", failures);
+    }
+
+    setLoading(false);
+  };
+
+  const togglePodSelection = (podName: string) => {
+    setSelectedPods((prev) => {
+      const next = new Set(prev);
+      if (next.has(podName)) {
+        next.delete(podName);
+      } else {
+        next.add(podName);
+      }
+      return next;
+    });
   };
 
   const openTerminal = async (podName: string) => {
@@ -363,6 +520,21 @@ export const PodList: React.FC = () => {
     pod.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const allFilteredSelected =
+    filteredPods.length > 0 && filteredPods.every((pod) => selectedPods.has(pod.name));
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedPods((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredPods.forEach((pod) => next.delete(pod.name));
+      } else {
+        filteredPods.forEach((pod) => next.add(pod.name));
+      }
+      return next;
+    });
+  };
+
   const activeRecoveries = Object.entries(recoveries);
 
   return (
@@ -396,11 +568,19 @@ export const PodList: React.FC = () => {
           </div>
         </div>
         <button
-          onClick={loadPods}
+          onClick={() => void loadPods()}
           className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition"
           title="Refresh pods"
         >
           <RefreshIcon className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => void deletePodsBulk(Array.from(selectedPods))}
+          disabled={selectedPods.size === 0}
+          className="flex-shrink-0 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          title="Eliminar pods seleccionados"
+        >
+          Eliminar seleccionados ({selectedPods.size})
         </button>
       </div>
 
@@ -433,10 +613,16 @@ export const PodList: React.FC = () => {
           <div className="divide-y divide-gray-200">
             {/* Encabezados de columnas */}
             <div className="sticky top-0 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center gap-4 text-sm font-semibold text-gray-700">
+              <div className="w-8 flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAllFiltered}
+                  title={allFilteredSelected ? "Deseleccionar todos" : "Seleccionar todos"}
+                />
+              </div>
               <div className="flex-1 min-w-0">Name</div>
               <div className="w-20">Status</div>
-              <div className="w-16">CPU</div>
-              <div className="w-20">Memory</div>
               <div className="w-16">Restarts</div>
               <div className="w-12">Age</div>
               <div className="w-36">Actions</div>
@@ -445,6 +631,14 @@ export const PodList: React.FC = () => {
             {filteredPods.map((pod) => (
               <div key={pod.name} className="bg-white hover:bg-gray-50 transition border-b border-gray-200">
                 <div className="px-4 py-4 flex items-center gap-4">
+                  <div className="w-8 flex justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedPods.has(pod.name)}
+                      onChange={() => togglePodSelection(pod.name)}
+                      title={`Seleccionar ${pod.name}`}
+                    />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 truncate text-sm" title={pod.name}>{pod.name}</h3>
                     <p className="text-xs text-gray-500 truncate">Image: {pod.image}</p>
@@ -458,8 +652,6 @@ export const PodList: React.FC = () => {
                       {pod.status}
                     </span>
                   </div>
-                  <div className="w-16 text-sm text-gray-700">{pod.cpu || "-"}</div>
-                  <div className="w-20 text-sm text-gray-700">{pod.memory || "-"}</div>
                   <div className="w-16 text-sm font-medium text-gray-900">{pod.restarts}</div>
                   <div className="w-12 text-sm text-gray-600">{pod.age || "-"}</div>
                   <div className="w-36 flex items-center gap-2">
@@ -512,7 +704,10 @@ export const PodList: React.FC = () => {
                         {logErrors[pod.name]}
                       </pre>
                     ) : logs[pod.name] ? (
-                      <pre className="flex-1 text-xs bg-white p-3 rounded border border-gray-200 overflow-auto text-gray-700 font-mono">
+                      <pre
+                        ref={expandedPod === pod.name ? inlineLogsRef : null}
+                        className="flex-1 text-xs bg-white p-3 rounded border border-gray-200 overflow-auto text-gray-700 font-mono"
+                      >
                         {logs[pod.name]}
                       </pre>
                     ) : (
@@ -523,7 +718,10 @@ export const PodList: React.FC = () => {
                     {logs[pod.name] && (
                       <div className="mt-2 flex items-center gap-2">
                         <button
-                          onClick={() => setExpandedLogPod(pod.name)}
+                          onClick={() => {
+                            setExpandedLogPod(pod.name);
+                            requestAnimationFrame(() => scrollToBottomIfNeeded(expandedLogsRef.current, true));
+                          }}
                           className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
                         >
                           Expandir logs →
@@ -566,7 +764,10 @@ export const PodList: React.FC = () => {
                 <CloseIcon className="w-5 h-5" />
               </button>
             </div>
-            <pre className="flex-1 overflow-auto text-xs bg-gray-900 text-green-400 p-4 font-mono whitespace-pre-wrap break-words">
+            <pre
+              ref={expandedLogsRef}
+              className="flex-1 overflow-auto text-xs bg-gray-900 text-green-400 p-4 font-mono whitespace-pre-wrap break-words"
+            >
               {logs[expandedLogPod]}
             </pre>
             <div className="border-t border-gray-200 p-4 bg-gray-50 flex justify-end">
