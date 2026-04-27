@@ -1,4 +1,5 @@
 {
+  "extends": null,
   "appId": "com.pichincha.lens-alternativa",
   "productName": "Lens Alternativa",
   "copyright": "Copyright © 2026 Banco Pichincha",
@@ -15,14 +16,14 @@
   },
   "win": {
     "icon": "build/icon.ico",
-    "artifactName": "LensAlternativa-Setup-${version}.${ext}",
+    "artifactName": "LensAlternativa-${version}-win-x64.${ext}",
     "target": [
       {
-        "target": "nsis",
+        "target": "zip",
         "arch": ["x64"]
       },
       {
-        "target": "portable",
+        "target": "dir",
         "arch": ["x64"]
       }
     ]
