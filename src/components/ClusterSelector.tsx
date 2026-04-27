@@ -85,7 +85,8 @@ export const ClusterSelector: React.FC = () => {
   };
 
   return (
-    <div className="relative inline-block w-full max-w-xs">
+    <div className="flex items-center gap-2 w-full max-w-xs">
+      <div className="relative flex-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-between"
@@ -118,10 +119,11 @@ export const ClusterSelector: React.FC = () => {
           ))}
         </div>
       )}
+      </div>
 
       <button
         onClick={handleRefresh}
-        className="ml-2 p-2 hover:bg-gray-100 rounded-lg transition"
+        className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition"
         title="Refresh clusters"
       >
         <RefreshIcon className="w-4 h-4" />

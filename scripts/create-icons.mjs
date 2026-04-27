@@ -48,32 +48,102 @@ function createIconPNG(size) {
   ihdr[9] = 2; // RGB
 
   // Build pixel rows (filter byte 0 + 3 bytes per pixel)
-  const rowLen = 1 + size * 3;
+  const rowLen = 1 + size * 4; // RGBA
+  ihdr[9] = 6; // RGBA color type
   const raw = Buffer.alloc(size * rowLen, 0);
 
   const cx = size / 2;
   const cy = size / 2;
-  const radius = size * 0.42;
+
+  // Helper: distance point-to-segment for line drawing
+  function distToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  }
+
+  // Node positions: center hub + 6 outer nodes (hexagonal)
+  const hubR   = size * 0.115;
+  const nodeR  = size * 0.072;
+  const orbitR = size * 0.30;
+  const lineW  = size * 0.022;
+  const outerBg = size * 0.46; // rounded square clip radius
+
+  const nodes = Array.from({ length: 6 }, (_, i) => {
+    const angle = (i * Math.PI) / 3 - Math.PI / 6;
+    return { x: cx + Math.cos(angle) * orbitR, y: cy + Math.sin(angle) * orbitR };
+  });
+
+  // Color palette
+  const BG_R = 13, BG_G = 17, BG_B = 35;         // very dark navy
+  const ACCENT_R = 56, ACCENT_G = 189, ACCENT_B = 248; // sky blue
+  const HUB_R = 99, HUB_G = 102, HUB_B = 241;     // indigo hub
+  const LINE_R = 56, LINE_G = 189, LINE_B = 248;   // same as accent
 
   for (let y = 0; y < size; y++) {
     raw[y * rowLen] = 0; // no filter
     for (let x = 0; x < size; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const px = y * rowLen + 1 + x * 3;
+      const px = y * rowLen + 1 + x * 4;
 
-      if (dist <= radius) {
-        // Bright blue circle – kubernetes / Lens-like feel
-        const t = 1 - dist / radius; // 1 at center, 0 at edge
-        raw[px]     = Math.round(30  + t * 20);   // R
-        raw[px + 1] = Math.round(100 + t * 60);   // G
-        raw[px + 2] = Math.round(220 + t * 35);   // B
-      } else {
-        // Dark navy background
-        raw[px]     = 15;
-        raw[px + 1] = 25;
-        raw[px + 2] = 50;
+      // Rounded square background clip (outer alpha)
+      const dx = Math.abs(x - cx), dy = Math.abs(y - cy);
+      const corner = size * 0.18;
+      let inBg = false;
+      if (dx <= outerBg && dy <= outerBg) {
+        if (dx <= outerBg - corner || dy <= outerBg - corner ||
+            Math.hypot(dx - (outerBg - corner), dy - (outerBg - corner)) <= corner) {
+          inBg = true;
+        }
+      }
+      if (!inBg) { raw[px + 3] = 0; continue; } // transparent
+
+      // Default: background
+      raw[px]     = BG_R;
+      raw[px + 1] = BG_G;
+      raw[px + 2] = BG_B;
+      raw[px + 3] = 255;
+
+      // Draw connector lines (hub → each node)
+      for (const node of nodes) {
+        const d = distToSegment(x, y, cx, cy, node.x, node.y);
+        if (d < lineW) {
+          const alpha = Math.max(0, 1 - d / lineW);
+          raw[px]     = Math.round(LINE_R * alpha + BG_R * (1 - alpha));
+          raw[px + 1] = Math.round(LINE_G * alpha + BG_G * (1 - alpha));
+          raw[px + 2] = Math.round(LINE_B * alpha + BG_B * (1 - alpha));
+        }
+      }
+
+      // Draw outer nodes
+      for (const node of nodes) {
+        const d = Math.hypot(x - node.x, y - node.y);
+        if (d <= nodeR) {
+          const t = 1 - d / nodeR;
+          const glow = t * 0.4;
+          raw[px]     = Math.round(Math.min(255, ACCENT_R + glow * 120));
+          raw[px + 1] = Math.round(Math.min(255, ACCENT_G + glow * 40));
+          raw[px + 2] = Math.round(Math.min(255, ACCENT_B + glow * 5));
+        }
+      }
+
+      // Draw center hub (indigo gradient circle)
+      const distHub = Math.hypot(x - cx, y - cy);
+      if (distHub <= hubR) {
+        const t = 1 - distHub / hubR;
+        raw[px]     = Math.round(HUB_R + t * 40);
+        raw[px + 1] = Math.round(HUB_G + t * 20);
+        raw[px + 2] = Math.round(HUB_B + t * 14);
+      }
+
+      // Subtle glow around hub
+      if (distHub > hubR && distHub <= hubR * 1.6) {
+        const fade = 1 - (distHub - hubR) / (hubR * 0.6);
+        raw[px]     = Math.round(raw[px]     * (1 - fade * 0.3) + HUB_R * fade * 0.3);
+        raw[px + 1] = Math.round(raw[px + 1] * (1 - fade * 0.3) + HUB_G * fade * 0.3);
+        raw[px + 2] = Math.round(raw[px + 2] * (1 - fade * 0.3) + HUB_B * fade * 0.3);
       }
     }
   }
