@@ -78,12 +78,27 @@ export const PodList: React.FC = () => {
   const [terminalRunning, setTerminalRunning] = useState<boolean>(false);
   const [copiedServiceForPod, setCopiedServiceForPod] = useState<string | null>(null);
   const [copiedServiceValue, setCopiedServiceValue] = useState<string | null>(null);
+  const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (selectedCluster && selectedNamespace) {
+      setSelectedPods(new Set());
       loadPods();
     }
   }, [selectedCluster, selectedNamespace]);
+
+  useEffect(() => {
+    // Keep selection only for pods that still exist in the current list.
+    setSelectedPods((prev) => {
+      if (prev.size === 0) return prev;
+      const names = new Set(pods.map((p) => p.name));
+      const next = new Set<string>();
+      prev.forEach((name) => {
+        if (names.has(name)) next.add(name);
+      });
+      return next;
+    });
+  }, [pods]);
 
   useEffect(() => {
     saveSearchFilter(search);
@@ -277,6 +292,69 @@ export const PodList: React.FC = () => {
     }
   };
 
+  const deletePodsBulk = async (podNames: string[]) => {
+    if (!selectedCluster || !selectedNamespace || podNames.length === 0) return;
+
+    const clusterName = selectedCluster.name;
+    const namespace = selectedNamespace;
+
+    const confirmed = window.confirm(
+      `Eliminar ${podNames.length} pod(s)? Kubernetes los recreara automaticamente.`
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    setError(null);
+
+    const failures: string[] = [];
+
+    for (const podName of podNames) {
+      const workloadPrefix = getWorkloadPrefix(podName);
+
+      setRecoveries((prev) => ({
+        ...prev,
+        [workloadPrefix]: { progress: 10, message: "Eliminando pod..." },
+      }));
+
+      try {
+        await window.api.deletePod(namespace, podName, clusterName);
+        setRecoveries((prev) => ({
+          ...prev,
+          [workloadPrefix]: { progress: 20, message: "Pod eliminado. Iniciando restablecimiento..." },
+        }));
+        void monitorRecovery(workloadPrefix, podName, namespace, clusterName);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Error deleting pod";
+        failures.push(`${podName}: ${message}`);
+        setRecoveries((prev) => ({
+          ...prev,
+          [workloadPrefix]: { progress: 100, message },
+        }));
+      }
+    }
+
+    setSelectedPods(new Set());
+
+    if (failures.length > 0) {
+      setError(`Fallo al eliminar ${failures.length} pod(s). Revisa detalles en consola.`);
+      console.error("Bulk delete failures:", failures);
+    }
+
+    setLoading(false);
+  };
+
+  const togglePodSelection = (podName: string) => {
+    setSelectedPods((prev) => {
+      const next = new Set(prev);
+      if (next.has(podName)) {
+        next.delete(podName);
+      } else {
+        next.add(podName);
+      }
+      return next;
+    });
+  };
+
   const openTerminal = async (podName: string) => {
     if (!selectedCluster || !selectedNamespace) return;
 
@@ -363,6 +441,21 @@ export const PodList: React.FC = () => {
     pod.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const allFilteredSelected =
+    filteredPods.length > 0 && filteredPods.every((pod) => selectedPods.has(pod.name));
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedPods((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredPods.forEach((pod) => next.delete(pod.name));
+      } else {
+        filteredPods.forEach((pod) => next.add(pod.name));
+      }
+      return next;
+    });
+  };
+
   const activeRecoveries = Object.entries(recoveries);
 
   return (
@@ -402,6 +495,14 @@ export const PodList: React.FC = () => {
         >
           <RefreshIcon className="w-4 h-4" />
         </button>
+        <button
+          onClick={() => void deletePodsBulk(Array.from(selectedPods))}
+          disabled={selectedPods.size === 0}
+          className="flex-shrink-0 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          title="Eliminar pods seleccionados"
+        >
+          Eliminar seleccionados ({selectedPods.size})
+        </button>
       </div>
 
       {/* Lista scrollable */}
@@ -433,6 +534,14 @@ export const PodList: React.FC = () => {
           <div className="divide-y divide-gray-200">
             {/* Encabezados de columnas */}
             <div className="sticky top-0 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center gap-4 text-sm font-semibold text-gray-700">
+              <div className="w-8 flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAllFiltered}
+                  title={allFilteredSelected ? "Deseleccionar todos" : "Seleccionar todos"}
+                />
+              </div>
               <div className="flex-1 min-w-0">Name</div>
               <div className="w-20">Status</div>
               <div className="w-16">CPU</div>
@@ -445,6 +554,14 @@ export const PodList: React.FC = () => {
             {filteredPods.map((pod) => (
               <div key={pod.name} className="bg-white hover:bg-gray-50 transition border-b border-gray-200">
                 <div className="px-4 py-4 flex items-center gap-4">
+                  <div className="w-8 flex justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedPods.has(pod.name)}
+                      onChange={() => togglePodSelection(pod.name)}
+                      title={`Seleccionar ${pod.name}`}
+                    />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 truncate text-sm" title={pod.name}>{pod.name}</h3>
                     <p className="text-xs text-gray-500 truncate">Image: {pod.image}</p>
