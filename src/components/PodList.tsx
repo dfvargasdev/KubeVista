@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useClusterStore } from "../store/clusterStore";
-import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal } from "react-icons/fi";
+import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal, FiCopy, FiCheck } from "react-icons/fi";
 
 const RefreshIcon = FiRefreshCw as React.ElementType;
 const FileTextIcon = FiFileText as React.ElementType;
@@ -9,6 +9,8 @@ const SearchIcon = FiSearch as React.ElementType;
 const CloseIcon = FiX as React.ElementType;
 const DownloadIcon = FiDownload as React.ElementType;
 const TerminalIcon = FiTerminal as React.ElementType;
+const CopyIcon = FiCopy as React.ElementType;
+const CheckIcon = FiCheck as React.ElementType;
 
 const SEARCH_KEY = "pod-search-filter";
 
@@ -41,6 +43,25 @@ function getWorkloadPrefix(podName: string): string {
   return podName;
 }
 
+function deriveServiceNameFromPod(podName: string): string {
+  // Typical deployment pod name: deployment-my-app-7f8c9d4b6f-abcde
+  // Desired service: service-my-app
+  const match = podName.match(/^(deployment)-(.*)-[a-z0-9]{8,10}-[a-z0-9]{5}$/i);
+  if (match?.[2]) {
+    return `service-${match[2]}`;
+  }
+
+  if (podName.startsWith("deployment-")) {
+    return `service-${getWorkloadPrefix(podName).replace(/^deployment-/, "")}`;
+  }
+
+  return podName;
+}
+
+function buildServiceFqdn(podName: string, namespace: string): string {
+  return `${deriveServiceNameFromPod(podName)}.${namespace}.svc.cluster.local`;
+}
+
 export const PodList: React.FC = () => {
   const { selectedCluster, selectedNamespace, pods, setPods, setLoading, setError } = useClusterStore();
   const [expandedPod, setExpandedPod] = useState<string | null>(null);
@@ -55,6 +76,8 @@ export const PodList: React.FC = () => {
   const [terminalCommand, setTerminalCommand] = useState<string>("");
   const [terminalOutput, setTerminalOutput] = useState<string>("");
   const [terminalRunning, setTerminalRunning] = useState<boolean>(false);
+  const [copiedServiceForPod, setCopiedServiceForPod] = useState<string | null>(null);
+  const [copiedServiceValue, setCopiedServiceValue] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedCluster && selectedNamespace) {
@@ -314,6 +337,20 @@ export const PodList: React.FC = () => {
     }
   };
 
+  const copyServiceName = async (podName: string) => {
+    if (!selectedNamespace) return;
+    const serviceName = buildServiceFqdn(podName, selectedNamespace);
+    try {
+      await navigator.clipboard.writeText(serviceName);
+      setCopiedServiceForPod(podName);
+      setCopiedServiceValue(serviceName);
+      setTimeout(() => setCopiedServiceForPod((prev) => (prev === podName ? null : prev)), 1400);
+      setTimeout(() => setCopiedServiceValue((prev) => (prev === serviceName ? null : prev)), 1800);
+    } catch {
+      setError("No se pudo copiar al portapapeles");
+    }
+  };
+
   if (!selectedCluster || !selectedNamespace) {
     return (
       <div className="p-8 text-center text-gray-500">
@@ -402,7 +439,7 @@ export const PodList: React.FC = () => {
               <div className="w-20">Memory</div>
               <div className="w-16">Restarts</div>
               <div className="w-12">Age</div>
-              <div className="w-28">Actions</div>
+              <div className="w-36">Actions</div>
             </div>
 
             {filteredPods.map((pod) => (
@@ -425,7 +462,16 @@ export const PodList: React.FC = () => {
                   <div className="w-20 text-sm text-gray-700">{pod.memory || "-"}</div>
                   <div className="w-16 text-sm font-medium text-gray-900">{pod.restarts}</div>
                   <div className="w-12 text-sm text-gray-600">{pod.age || "-"}</div>
-                  <div className="w-28 flex items-center gap-2">
+                  <div className="w-36 flex items-center gap-2">
+                    <button
+                      onClick={() => void copyServiceName(pod.name)}
+                      className="p-1 hover:bg-gray-200 rounded transition"
+                      title={`Copiar servicio: ${buildServiceFqdn(pod.name, selectedNamespace)}`}
+                    >
+                      {copiedServiceForPod === pod.name
+                        ? <CheckIcon className="w-4 h-4 text-green-600" />
+                        : <CopyIcon className="w-4 h-4" />}
+                    </button>
                     <button
                       onClick={() => handleViewLogs(pod.name)}
                       className="p-1 hover:bg-gray-200 rounded transition"
@@ -497,6 +543,15 @@ export const PodList: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de logs expandidos */}
+      {copiedServiceValue && (
+        <div className="fixed bottom-4 right-4 z-50 pointer-events-none">
+          <div className="max-w-[36rem] bg-gray-900 text-white text-xs px-3 py-2 rounded-lg shadow-lg border border-gray-700">
+            Servicio copiado: <span className="font-mono text-green-300">{copiedServiceValue}</span>
+          </div>
+        </div>
+      )}
 
       {/* Modal de logs expandidos */}
       {expandedLogPod && logs[expandedLogPod] && (
