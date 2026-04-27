@@ -96,6 +96,10 @@ export const PodList: React.FC = () => {
   const [selectedPods, setSelectedPods] = useState<Set<string>>(new Set());
   const inlineLogsRef = useRef<HTMLPreElement | null>(null);
   const expandedLogsRef = useRef<HTMLPreElement | null>(null);
+  // Track which pod we last force-scrolled so we can distinguish
+  // "first open" (force scroll to bottom) from "auto-refresh" (tail-follow).
+  const lastScrolledInlinePodRef = useRef<string | null>(null);
+  const lastScrolledModalPodRef = useRef<string | null>(null);
 
   const clearRecovery = useCallback((workloadPrefix: string) => {
     setRecoveries((prev) => {
@@ -146,15 +150,6 @@ export const PodList: React.FC = () => {
       );
       setLogs((prev) => ({ ...prev, [podName]: podLogs }));
       setLogErrors((prev) => ({ ...prev, [podName]: "" }));
-
-      requestAnimationFrame(() => {
-        const force = !isBackground;
-        if (expandedLogPod === podName) {
-          scrollToBottomIfNeeded(expandedLogsRef.current, force);
-        } else if (expandedPod === podName) {
-          scrollToBottomIfNeeded(inlineLogsRef.current, force);
-        }
-      });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Error loading logs";
       setLogErrors((prev) => ({ ...prev, [podName]: errorMsg }));
@@ -168,7 +163,27 @@ export const PodList: React.FC = () => {
         setLoading(false);
       }
     }
-  }, [selectedCluster, selectedNamespace, setError, setLoading, expandedLogPod, expandedPod]);
+  }, [selectedCluster, selectedNamespace, setError, setLoading]);
+
+  // Scroll inline logs: force-scroll to bottom on first open, tail-follow on auto-refresh.
+  useEffect(() => {
+    if (!expandedPod || !logs[expandedPod]) return;
+    const isFirstOpen = lastScrolledInlinePodRef.current !== expandedPod;
+    if (isFirstOpen) {
+      lastScrolledInlinePodRef.current = expandedPod;
+    }
+    requestAnimationFrame(() => scrollToBottomIfNeeded(inlineLogsRef.current, isFirstOpen));
+  }, [logs, expandedPod]);
+
+  // Scroll modal logs: force-scroll to bottom on first open, tail-follow on auto-refresh.
+  useEffect(() => {
+    if (!expandedLogPod || !logs[expandedLogPod]) return;
+    const isFirstOpen = lastScrolledModalPodRef.current !== expandedLogPod;
+    if (isFirstOpen) {
+      lastScrolledModalPodRef.current = expandedLogPod;
+    }
+    requestAnimationFrame(() => scrollToBottomIfNeeded(expandedLogsRef.current, isFirstOpen));
+  }, [logs, expandedLogPod]);
 
   useEffect(() => {
     if (selectedCluster && selectedNamespace) {
