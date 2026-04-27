@@ -615,8 +615,6 @@ export const PodList: React.FC = () => {
               </div>
               <div className="flex-1 min-w-0">Name</div>
               <div className="w-20">Status</div>
-              <div className="w-16">CPU</div>
-              <div className="w-20">Memory</div>
               <div className="w-16">Restarts</div>
               <div className="w-12">Age</div>
               <div className="w-36">Actions</div>
@@ -646,8 +644,6 @@ export const PodList: React.FC = () => {
                       {pod.status}
                     </span>
                   </div>
-                  <div className="w-16 text-sm text-gray-700">{pod.cpu || "-"}</div>
-                  <div className="w-20 text-sm text-gray-700">{pod.memory || "-"}</div>
                   <div className="w-16 text-sm font-medium text-gray-900">{pod.restarts}</div>
                   <div className="w-12 text-sm text-gray-600">{pod.age || "-"}</div>
                   <div className="w-36 flex items-center gap-2">
