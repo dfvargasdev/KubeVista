@@ -8,7 +8,11 @@ import { FiAlertCircle } from "react-icons/fi";
 
 const AlertIcon = FiAlertCircle as React.ElementType;
 
-export const Dashboard: React.FC = () => {
+interface DashboardProps {
+  onGoHome?: () => void;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ onGoHome }) => {
   const { loading, error } = useClusterStore();
   const [activeTab, setActiveTab] = useState<"pods" | "configmaps">("pods");
 
@@ -23,9 +27,19 @@ export const Dashboard: React.FC = () => {
             </div>
             <h1 className="text-2xl font-bold text-gray-900">KubeVista</h1>
           </div>
-          {loading && (
-            <span className="text-sm text-gray-500">Loading...</span>
-          )}
+          <div className="flex items-center gap-3">
+            {loading && (
+              <span className="text-sm text-gray-500">Loading...</span>
+            )}
+            {onGoHome && (
+              <button
+                onClick={onGoHome}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
+              >
+                Menu inicial
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
