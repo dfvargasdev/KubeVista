@@ -1,4 +1,4 @@
-# Dependencies
+﻿# Dependencies
 node_modules/
 /.pnp
 .pnp.js
@@ -33,3 +33,5 @@ out/
 
 # OS
 Thumbs.db
+out-kubevista/
+
