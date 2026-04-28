@@ -1,10 +1,10 @@
 {
-  "name": "lens-alternativa",
+  "name": "kubevista",
   "version": "1.0.0",
-  "description": "Kubernetes cluster manager - Alternative to Lens",
+  "description": "Kubernetes cluster manager desktop application",
   "main": "dist/main.js",
   "homepage": "./",
-  "author": "Banco Pichincha",
+  "author": "Diego Vargas (dfVargasDev)",
   "license": "MIT",
   "scripts": {
     "build:icons": "set PATH=C:\\tools\\node-v20.11.0-win-x64;%PATH%&& node scripts/create-icons.mjs",

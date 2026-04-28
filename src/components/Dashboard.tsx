@@ -19,9 +19,9 @@ export const Dashboard: React.FC = () => {
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold">LA</span>
+              <span className="text-white font-bold">KV</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Lens Alternativa</h1>
+            <h1 className="text-2xl font-bold text-gray-900">KubeVista</h1>
           </div>
           {loading && (
             <span className="text-sm text-gray-500">Loading...</span>
@@ -85,7 +85,7 @@ export const Dashboard: React.FC = () => {
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 px-6 py-3 text-xs text-gray-500">
-        <p>Lens Alternativa • Kubernetes Cluster Manager</p>
+        <p>KubeVista • Kubernetes Cluster Manager • Diego Vargas (dfVargasDev)</p>
       </footer>
     </div>
   );
