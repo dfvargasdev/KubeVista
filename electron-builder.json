@@ -1,8 +1,8 @@
 {
   "extends": null,
-  "appId": "com.pichincha.lens-alternativa",
-  "productName": "Lens Alternativa",
-  "copyright": "Copyright © 2026 Banco Pichincha",
+  "appId": "com.dfvargasdev.kubevista",
+  "productName": "KubeVista",
+  "copyright": "Copyright © 2026 Diego Vargas (dfVargasDev)",
   "icon": "build/icon",
   "files": [
     "dist/**/*",
@@ -21,7 +21,7 @@
   },
   "win": {
     "icon": "build/icon.ico",
-    "artifactName": "LensAlternativa-${version}-win-x64.${ext}",
+    "artifactName": "KubeVista-${version}-win-x64.${ext}",
     "target": [
       {
         "target": "zip",
@@ -34,6 +34,7 @@
     ]
   },
   "nsis": {
+    "artifactName": "KubeVista-${version}-win-x64-setup.${ext}",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "installerIcon": "build/icon.ico",
@@ -41,16 +42,19 @@
     "installerHeaderIcon": "build/icon.ico",
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Lens Alternativa"
+    "shortcutName": "KubeVista"
+  },
+  "portable": {
+    "artifactName": "KubeVista-${version}-win-x64-portable.${ext}"
   },
   "mac": {
     "icon": "build/icon.png",
-    "artifactName": "LensAlternativa-${version}.${ext}",
+    "artifactName": "KubeVista-${version}.${ext}",
     "target": ["dmg", "zip"]
   },
   "linux": {
     "icon": "build/icon.png",
-    "artifactName": "LensAlternativa-${version}.${ext}",
+    "artifactName": "KubeVista-${version}.${ext}",
     "target": ["AppImage", "deb"]
   }
 }
