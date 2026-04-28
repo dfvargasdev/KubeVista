@@ -29,7 +29,7 @@ function createWindow() {
     mainWindow.loadFile(indexPath).catch((err: Error) => {
       const msg = `No se pudo cargar la interfaz:\n${err.message}\n\nRuta esperada: ${indexPath}`;
       mainWindow?.loadURL(
-        `data:text/html;charset=utf-8,<html><body style="font-family:monospace;padding:2rem;background:%23111;color:%23f87171"><h2>Error al iniciar Lens Alternativa</h2><pre>${encodeURIComponent(msg)}</pre></body></html>`
+        `data:text/html;charset=utf-8,<html><body style="font-family:monospace;padding:2rem;background:%23111;color:%23f87171"><h2>Error al iniciar KubeVista</h2><pre>${encodeURIComponent(msg)}</pre></body></html>`
       );
       console.error("Failed to load renderer:", err);
     });
@@ -45,7 +45,7 @@ function createWindow() {
     if (!isDev) {
       const msg = `Error al cargar la app (${errorCode}):\n${errorDescription}\nURL: ${validatedURL}`;
       mainWindow?.loadURL(
-        `data:text/html;charset=utf-8,<html><body style="font-family:monospace;padding:2rem;background:%23111;color:%23f87171"><h2>Error al iniciar Lens Alternativa</h2><pre>${encodeURIComponent(msg)}</pre></body></html>`
+        `data:text/html;charset=utf-8,<html><body style="font-family:monospace;padding:2rem;background:%23111;color:%23f87171"><h2>Error al iniciar KubeVista</h2><pre>${encodeURIComponent(msg)}</pre></body></html>`
       );
     }
   });
