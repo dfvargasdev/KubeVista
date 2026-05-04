@@ -93,6 +93,19 @@ function App() {
     }
   };
 
+  const runAzureLogin = async () => {
+    setActionTone("info");
+    setActionMessage("Abriendo terminal para az login...");
+    try {
+      const result = await window.api.azureLogin();
+      setActionTone("success");
+      setActionMessage(result.message);
+    } catch (error) {
+      setActionTone("error");
+      setActionMessage(`Error al iniciar az login: ${String(error)}`);
+    }
+  };
+
   const parseTelepresenceConnect = (rawOutput: string): TelepresenceStatusSection => {
     const oneLine = rawOutput.replace(/\r/g, " ").replace(/\n/g, " ").trim();
     const contextMatch = oneLine.match(/context\s+([^,]+)/i);
@@ -293,15 +306,24 @@ function App() {
               <p className="text-xs text-gray-500">Version 2 · Centro de inicio</p>
             </div>
           </div>
-          {view !== "home" && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setView("home")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm hover:bg-gray-50"
+              onClick={runAzureLogin}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-600 text-sm text-white hover:bg-emerald-700"
             >
-              <HomeIcon className="w-4 h-4" />
-              Menu inicial
+              <TerminalIcon className="w-4 h-4" />
+              Reautenticar (az login)
             </button>
-          )}
+            {view !== "home" && (
+              <button
+                onClick={() => setView("home")}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm hover:bg-gray-50"
+              >
+                <HomeIcon className="w-4 h-4" />
+                Menu inicial
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
