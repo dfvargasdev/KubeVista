@@ -89,19 +89,7 @@ interface CommandResult {
   stderr: string;
 }
 
-function runWindowsInstall(tool: InstallTool): { message: string } {
-  const installCommands: Record<InstallTool, string> = {
-    "azure-cli": "winget install --id Microsoft.AzureCLI -e --accept-package-agreements --accept-source-agreements",
-    kubectl: "winget install --id Kubernetes.kubectl -e --accept-package-agreements --accept-source-agreements",
-    kubelogin: "winget install --id Kubernetes.kubelogin -e --accept-package-agreements --accept-source-agreements",
-    all: [
-      "winget install --id Microsoft.AzureCLI -e --accept-package-agreements --accept-source-agreements",
-      "winget install --id Kubernetes.kubectl -e --accept-package-agreements --accept-source-agreements",
-      "winget install --id Kubernetes.kubelogin -e --accept-package-agreements --accept-source-agreements",
-    ].join("; "),
-  };
-
-  const command = installCommands[tool];
+function runInDetachedPowerShell(command: string): void {
   const child = spawn(
     "powershell.exe",
     [
@@ -119,6 +107,36 @@ function runWindowsInstall(tool: InstallTool): { message: string } {
   );
 
   child.unref();
+}
+
+function runInVisibleCmdWindow(command: string, title: string): void {
+  const child = spawn(
+    "cmd.exe",
+    ["/c", "start", `"${title}"`, "cmd.exe", "/k", command],
+    {
+      windowsHide: false,
+      detached: true,
+      stdio: "ignore",
+    }
+  );
+
+  child.unref();
+}
+
+function runWindowsInstall(tool: InstallTool): { message: string } {
+  const installCommands: Record<InstallTool, string> = {
+    "azure-cli": "winget install --id Microsoft.AzureCLI -e --accept-package-agreements --accept-source-agreements",
+    kubectl: "winget install --id Kubernetes.kubectl -e --accept-package-agreements --accept-source-agreements",
+    kubelogin: "winget install --id Kubernetes.kubelogin -e --accept-package-agreements --accept-source-agreements",
+    all: [
+      "winget install --id Microsoft.AzureCLI -e --accept-package-agreements --accept-source-agreements",
+      "winget install --id Kubernetes.kubectl -e --accept-package-agreements --accept-source-agreements",
+      "winget install --id Kubernetes.kubelogin -e --accept-package-agreements --accept-source-agreements",
+    ].join("; "),
+  };
+
+  const command = installCommands[tool];
+  runInDetachedPowerShell(command);
   return {
     message: "Se abrio una terminal para ejecutar la instalacion. Revisa el progreso alli.",
   };
@@ -258,6 +276,26 @@ ipcMain.handle("install-tool", async (_, tool: InstallTool) => {
   }
 
   return runWindowsInstall(tool);
+});
+
+ipcMain.handle("azure-login", async () => {
+  if (process.platform !== "win32") {
+    return {
+      message: "La accion az login con un clic esta habilitada solo en Windows.",
+    };
+  }
+
+  const child = spawn("cmd.exe", ["/c", "start", "", "az", "login"], {
+    windowsHide: false,
+    detached: true,
+    stdio: "ignore",
+  });
+
+  child.unref();
+
+  return {
+    message: "az login lanzado.",
+  };
 });
 
 ipcMain.handle("telepresence-connect", async (_, clusterContext: string) => {

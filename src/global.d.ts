@@ -17,6 +17,7 @@ interface Window {
     ) => Promise<{ success: boolean; stdout: string; stderr: string }>;
     openExternalUrl: (url: string) => Promise<void>;
     installTool: (tool: "azure-cli" | "kubectl" | "kubelogin" | "all") => Promise<{ message: string }>;
+    azureLogin: () => Promise<{ message: string }>;
     telepresenceConnect: (clusterContext: string) => Promise<{ success: boolean; stdout: string; stderr: string }>;
     telepresenceStatus: () => Promise<{ success: boolean; stdout: string; stderr: string }>;
     telepresenceQuit: () => Promise<{ success: boolean; stdout: string; stderr: string }>;
