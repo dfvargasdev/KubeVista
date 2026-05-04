@@ -16,6 +16,11 @@ interface IpcApi {
     cluster: string,
     command: string
   ) => Promise<{ success: boolean; stdout: string; stderr: string }>;
+  openExternalUrl: (url: string) => Promise<void>;
+  installTool: (tool: "azure-cli" | "kubectl" | "kubelogin" | "all") => Promise<{ message: string }>;
+  telepresenceConnect: (clusterContext: string) => Promise<{ success: boolean; stdout: string; stderr: string }>;
+  telepresenceStatus: () => Promise<{ success: boolean; stdout: string; stderr: string }>;
+  telepresenceQuit: () => Promise<{ success: boolean; stdout: string; stderr: string }>;
 }
 
 const api: IpcApi = {
@@ -36,6 +41,13 @@ const api: IpcApi = {
     ipcRenderer.invoke("update-configmap", namespace, name, data, cluster),
   execPodCommand: (namespace: string, podName: string, containerName: string, cluster: string, command: string) =>
     ipcRenderer.invoke("exec-pod-command", namespace, podName, containerName, cluster, command),
+  openExternalUrl: (url: string) => ipcRenderer.invoke("open-external-url", url),
+  installTool: (tool: "azure-cli" | "kubectl" | "kubelogin" | "all") =>
+    ipcRenderer.invoke("install-tool", tool),
+  telepresenceConnect: (clusterContext: string) =>
+    ipcRenderer.invoke("telepresence-connect", clusterContext),
+  telepresenceStatus: () => ipcRenderer.invoke("telepresence-status"),
+  telepresenceQuit: () => ipcRenderer.invoke("telepresence-quit"),
 };
 
 contextBridge.exposeInMainWorld("api", api);

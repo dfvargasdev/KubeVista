@@ -1,6 +1,10 @@
-import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, shell } from "electron";
 import * as path from "path";
+import { execFile, spawn } from "child_process";
+import { promisify } from "util";
 import { KubernetesService } from "./services/kubernetesService";
+
+const execFileAsync = promisify(execFile);
 
 const isDev = process.env.NODE_ENV === "development";
 const DEV_ICON_PATH = path.join(__dirname, "../build/icon.ico");
@@ -76,6 +80,70 @@ app.on("activate", () => {
 
 // IPC Handlers for Kubernetes operations
 const kubeService = new KubernetesService();
+
+type InstallTool = "azure-cli" | "kubectl" | "kubelogin" | "all";
+
+interface CommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+function runWindowsInstall(tool: InstallTool): { message: string } {
+  const installCommands: Record<InstallTool, string> = {
+    "azure-cli": "winget install --id Microsoft.AzureCLI -e --accept-package-agreements --accept-source-agreements",
+    kubectl: "winget install --id Kubernetes.kubectl -e --accept-package-agreements --accept-source-agreements",
+    kubelogin: "winget install --id Kubernetes.kubelogin -e --accept-package-agreements --accept-source-agreements",
+    all: [
+      "winget install --id Microsoft.AzureCLI -e --accept-package-agreements --accept-source-agreements",
+      "winget install --id Kubernetes.kubectl -e --accept-package-agreements --accept-source-agreements",
+      "winget install --id Kubernetes.kubelogin -e --accept-package-agreements --accept-source-agreements",
+    ].join("; "),
+  };
+
+  const command = installCommands[tool];
+  const child = spawn(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      `Start-Process powershell -ArgumentList '-NoExit','-Command','${command}'`,
+    ],
+    {
+      windowsHide: true,
+      detached: true,
+      stdio: "ignore",
+    }
+  );
+
+  child.unref();
+  return {
+    message: "Se abrio una terminal para ejecutar la instalacion. Revisa el progreso alli.",
+  };
+}
+
+async function runTelepresenceCommand(args: string[]): Promise<CommandResult> {
+  try {
+    const result = await execFileAsync("telepresence", args, {
+      windowsHide: true,
+      maxBuffer: 1024 * 1024 * 8,
+    });
+
+    return {
+      success: true,
+      stdout: result.stdout || "",
+      stderr: result.stderr || "",
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      stdout: error?.stdout || "",
+      stderr: error?.stderr || error?.message || "Error ejecutando telepresence",
+    };
+  }
+}
 
 ipcMain.handle("get-clusters", async () => {
   try {
@@ -170,6 +238,43 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle("open-external-url", async (_, url: string) => {
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error("URL no permitida");
+  }
+  await shell.openExternal(url);
+});
+
+ipcMain.handle("install-tool", async (_, tool: InstallTool) => {
+  if (!tool || !["azure-cli", "kubectl", "kubelogin", "all"].includes(tool)) {
+    throw new Error("Herramienta de instalacion invalida");
+  }
+
+  if (process.platform !== "win32") {
+    return {
+      message: "La instalacion con un clic esta habilitada solo en Windows.",
+    };
+  }
+
+  return runWindowsInstall(tool);
+});
+
+ipcMain.handle("telepresence-connect", async (_, clusterContext: string) => {
+  if (!clusterContext || !/^[\w\-.:/]+$/.test(clusterContext)) {
+    throw new Error("Contexto de cluster invalido");
+  }
+
+  return runTelepresenceCommand(["connect", "--context", clusterContext]);
+});
+
+ipcMain.handle("telepresence-status", async () => {
+  return runTelepresenceCommand(["status"]);
+});
+
+ipcMain.handle("telepresence-quit", async () => {
+  return runTelepresenceCommand(["quit"]);
+});
 
 // Menu
 const template: Electron.MenuItemConstructorOptions[] = [
