@@ -190,14 +190,23 @@ ipcMain.handle("get-namespaces", async (_, cluster: string) => {
   }
 });
 
-ipcMain.handle("get-pod-logs", async (_, namespace: string, podName: string, cluster: string) => {
-  try {
-    return await kubeService.getPodLogs(namespace, podName, cluster);
-  } catch (error) {
-    console.error("Error getting pod logs:", error);
-    throw error;
+ipcMain.handle(
+  "get-pod-logs",
+  async (
+    _,
+    namespace: string,
+    podName: string,
+    cluster: string,
+    options?: { lines?: number }
+  ) => {
+    try {
+      return await kubeService.getPodLogs(namespace, podName, cluster, options);
+    } catch (error) {
+      console.error("Error getting pod logs:", error);
+      throw error;
+    }
   }
-});
+);
 
 ipcMain.handle("delete-pod", async (_, namespace: string, podName: string, cluster: string) => {
   try {

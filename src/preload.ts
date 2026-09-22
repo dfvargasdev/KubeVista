@@ -1,10 +1,19 @@
 import { ipcRenderer, contextBridge } from "electron";
 
+interface PodLogsOptions {
+  lines?: number;
+}
+
 interface IpcApi {
   getClusters: () => Promise<any>;
   getPods: (namespace: string, cluster: string) => Promise<any>;
   getNamespaces: (cluster: string) => Promise<any>;
-  getPodLogs: (namespace: string, podName: string, cluster: string) => Promise<string>;
+  getPodLogs: (
+    namespace: string,
+    podName: string,
+    cluster: string,
+    options?: PodLogsOptions
+  ) => Promise<string>;
   deletePod: (namespace: string, podName: string, cluster: string) => Promise<void>;
   getPodContainers: (namespace: string, podName: string, cluster: string) => Promise<string[]>;
   getConfigMaps: (namespace: string, cluster: string) => Promise<any[]>;
@@ -30,8 +39,12 @@ const api: IpcApi = {
     ipcRenderer.invoke("get-pods", namespace, cluster),
   getNamespaces: (cluster: string) =>
     ipcRenderer.invoke("get-namespaces", cluster),
-  getPodLogs: (namespace: string, podName: string, cluster: string) =>
-    ipcRenderer.invoke("get-pod-logs", namespace, podName, cluster),
+  getPodLogs: (
+    namespace: string,
+    podName: string,
+    cluster: string,
+    options?: PodLogsOptions
+  ) => ipcRenderer.invoke("get-pod-logs", namespace, podName, cluster, options),
   deletePod: (namespace: string, podName: string, cluster: string) =>
     ipcRenderer.invoke("delete-pod", namespace, podName, cluster),
   getPodContainers: (namespace: string, podName: string, cluster: string) =>

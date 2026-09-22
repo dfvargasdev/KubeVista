@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useClusterStore } from "../store/clusterStore";
 import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal, FiCopy, FiCheck } from "react-icons/fi";
 
@@ -17,6 +17,16 @@ const PODS_REFRESH_INTERVAL_MS = 10000;
 const LOGS_REFRESH_INTERVAL_MS = 5000;
 const SCROLL_BOTTOM_THRESHOLD_PX = 32;
 const RECOVERY_BANNER_TTL_MS = 12000;
+const LOG_LINE_LIMIT_KEY = "pod-log-line-limit";
+
+type LogLineLimit = "500" | "2000" | "10000" | "all";
+
+const LOG_LINE_LIMIT_OPTIONS: Array<{ value: LogLineLimit; label: string }> = [
+  { value: "all", label: "Todos" },
+  { value: "500", label: "Ultimas 500" },
+  { value: "2000", label: "Ultimas 2.000" },
+  { value: "10000", label: "Ultimas 10.000" },
+];
 
 function loadSearchFilter(): string {
   try {
@@ -30,6 +40,162 @@ function saveSearchFilter(search: string): void {
   try {
     localStorage.setItem(SEARCH_KEY, search);
   } catch {}
+}
+
+function loadLogLineLimit(): LogLineLimit {
+  try {
+    const stored = localStorage.getItem(LOG_LINE_LIMIT_KEY) as LogLineLimit | null;
+    const isKnownValue = LOG_LINE_LIMIT_OPTIONS.some((option) => option.value === stored);
+    return isKnownValue && stored ? stored : "all";
+  } catch {
+    return "all";
+  }
+}
+
+function saveLogLineLimit(limit: LogLineLimit): void {
+  try {
+    localStorage.setItem(LOG_LINE_LIMIT_KEY, limit);
+  } catch {}
+}
+
+function parseLogLineLimit(limit: LogLineLimit): number | undefined {
+  if (limit === "all") {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(limit, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function countLogMatches(content: string, search: string): number {
+  const query = search.trim();
+  if (!query) {
+    return 0;
+  }
+
+  const matches = content.match(new RegExp(escapeRegExp(query), "gi"));
+  return matches?.length || 0;
+}
+
+function getVisibleLog(content: string, search: string, onlyMatching: boolean): string {
+  const query = search.trim();
+  if (!query || !onlyMatching) {
+    return content;
+  }
+
+  const lowerQuery = query.toLowerCase();
+  const matchingLines = content
+    .split(/\r?\n/)
+    .filter((line) => line.toLowerCase().includes(lowerQuery));
+
+  return matchingLines.length > 0
+    ? matchingLines.join("\n")
+    : "No hay lineas que coincidan con la busqueda.";
+}
+
+interface HighlightedLogProps {
+  content: string;
+  search: string;
+}
+
+function HighlightedLog({ content, search }: HighlightedLogProps) {
+  const parts = useMemo(() => {
+    const query = search.trim();
+    if (!query) {
+      return [content];
+    }
+    return content.split(new RegExp(`(${escapeRegExp(query)})`, "gi"));
+  }, [content, search]);
+
+  const query = search.trim().toLowerCase();
+  if (!query) {
+    return <>{content}</>;
+  }
+
+  return (
+    <>
+      {parts.map((part, index) => (
+        part.toLowerCase() === query
+          ? (
+            <mark key={index} className="bg-yellow-200 text-gray-900 rounded-sm px-0.5">
+              {part}
+            </mark>
+          )
+          : <React.Fragment key={index}>{part}</React.Fragment>
+      ))}
+    </>
+  );
+}
+
+interface LogSearchControlsProps {
+  search: string;
+  onlyMatching: boolean;
+  matchCount: number;
+  onSearchChange: (value: string) => void;
+  onOnlyMatchingChange: (value: boolean) => void;
+}
+
+function LogSearchControls({
+  search,
+  onlyMatching,
+  matchCount,
+  onSearchChange,
+  onOnlyMatchingChange,
+}: LogSearchControlsProps) {
+  const hasSearch = search.trim().length > 0;
+  const matchText = hasSearch
+    ? `${matchCount} coincidencia${matchCount === 1 ? "" : "s"}`
+    : "Buscar dentro de logs";
+
+  return (
+    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="relative flex-1 min-w-0">
+        <SearchIcon className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={(event) => {
+            const nextSearch = event.target.value;
+            onSearchChange(nextSearch);
+            if (!nextSearch.trim()) {
+              onOnlyMatchingChange(false);
+            }
+          }}
+          placeholder="Buscar en logs..."
+          className="w-full pl-8 pr-9 py-2 text-xs border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {hasSearch && (
+          <button
+            type="button"
+            onClick={() => {
+              onSearchChange("");
+              onOnlyMatchingChange(false);
+            }}
+            className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+            title="Limpiar busqueda"
+          >
+            <CloseIcon className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-3 text-xs text-gray-600">
+        <span className="whitespace-nowrap">{matchText}</span>
+        <label className="flex items-center gap-1 whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={onlyMatching}
+            onChange={(event) => onOnlyMatchingChange(event.target.checked)}
+            disabled={!hasSearch}
+          />
+          Solo coincidencias
+        </label>
+      </div>
+    </div>
+  );
 }
 
 interface RecoveryState {
@@ -84,6 +250,9 @@ export const PodList: React.FC = () => {
   const [logErrors, setLogErrors] = useState<Record<string, string>>({});
   const [recoveries, setRecoveries] = useState<Record<string, RecoveryState>>({});
   const [search, setSearch] = useState(loadSearchFilter);
+  const [logLineLimit, setLogLineLimit] = useState<LogLineLimit>(loadLogLineLimit);
+  const [logSearches, setLogSearches] = useState<Record<string, string>>({});
+  const [onlyMatchingLogLines, setOnlyMatchingLogLines] = useState<Record<string, boolean>>({});
   const [expandedLogPod, setExpandedLogPod] = useState<string | null>(null);
   const [terminalPod, setTerminalPod] = useState<string | null>(null);
   const [terminalContainers, setTerminalContainers] = useState<string[]>([]);
@@ -134,7 +303,11 @@ export const PodList: React.FC = () => {
     }
   }, [selectedCluster, selectedNamespace, setError, setLoading, setPods]);
 
-  const fetchPodLogs = useCallback(async (podName: string, isBackground = false) => {
+  const fetchPodLogs = useCallback(async (
+    podName: string,
+    isBackground = false,
+    lineLimit = logLineLimit
+  ) => {
     if (!selectedCluster || !selectedNamespace) return;
 
     if (!isBackground) {
@@ -146,7 +319,8 @@ export const PodList: React.FC = () => {
       const podLogs = await window.api.getPodLogs(
         selectedNamespace,
         podName,
-        selectedCluster.name
+        selectedCluster.name,
+        { lines: parseLogLineLimit(lineLimit) }
       );
       setLogs((prev) => ({ ...prev, [podName]: podLogs }));
       setLogErrors((prev) => ({ ...prev, [podName]: "" }));
@@ -163,7 +337,7 @@ export const PodList: React.FC = () => {
         setLoading(false);
       }
     }
-  }, [selectedCluster, selectedNamespace, setError, setLoading]);
+  }, [logLineLimit, selectedCluster, selectedNamespace, setError, setLoading]);
 
   // Scroll inline logs: force-scroll to bottom on first open, tail-follow on auto-refresh.
   useEffect(() => {
@@ -219,6 +393,10 @@ export const PodList: React.FC = () => {
     saveSearchFilter(search);
   }, [search]);
 
+  useEffect(() => {
+    saveLogLineLimit(logLineLimit);
+  }, [logLineLimit]);
+
   const getStatusColor = (status: string): string => {
     switch (status) {
       case "Running":
@@ -229,6 +407,22 @@ export const PodList: React.FC = () => {
         return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const updateLogSearch = (podName: string, value: string) => {
+    setLogSearches((prev) => ({ ...prev, [podName]: value }));
+  };
+
+  const updateOnlyMatchingLogLines = (podName: string, value: boolean) => {
+    setOnlyMatchingLogLines((prev) => ({ ...prev, [podName]: value }));
+  };
+
+  const handleLogLineLimitChange = (value: LogLineLimit) => {
+    setLogLineLimit(value);
+    const activePodForLogs = expandedLogPod || expandedPod;
+    if (activePodForLogs) {
+      void fetchPodLogs(activePodForLogs, false, value);
     }
   };
 
@@ -582,6 +776,24 @@ export const PodList: React.FC = () => {
             )}
           </div>
         </div>
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          <label htmlFor="pod-log-line-limit" className="whitespace-nowrap">
+            Logs
+          </label>
+          <select
+            id="pod-log-line-limit"
+            value={logLineLimit}
+            onChange={(event) => handleLogLineLimitChange(event.target.value as LogLineLimit)}
+            className="px-2 py-2 text-xs border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            title="Cantidad de logs a cargar"
+          >
+            {LOG_LINE_LIMIT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <button
           onClick={() => void loadPods()}
           className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition"
@@ -714,6 +926,15 @@ export const PodList: React.FC = () => {
                 {expandedPod === pod.name && (
                   <div className="border-t border-gray-200 bg-gray-50 p-4 max-h-64 overflow-hidden flex flex-col">
                     <h4 className="text-sm font-semibold text-gray-900 mb-2">Logs:</h4>
+                    {logs[pod.name] && (
+                      <LogSearchControls
+                        search={logSearches[pod.name] || ""}
+                        onlyMatching={Boolean(onlyMatchingLogLines[pod.name])}
+                        matchCount={countLogMatches(logs[pod.name], logSearches[pod.name] || "")}
+                        onSearchChange={(value) => updateLogSearch(pod.name, value)}
+                        onOnlyMatchingChange={(value) => updateOnlyMatchingLogLines(pod.name, value)}
+                      />
+                    )}
                     {logErrors[pod.name] ? (
                       <pre className="flex-1 text-xs bg-red-50 p-3 rounded border border-red-200 text-red-700 font-mono overflow-auto">
                         {logErrors[pod.name]}
@@ -723,7 +944,14 @@ export const PodList: React.FC = () => {
                         ref={expandedPod === pod.name ? inlineLogsRef : null}
                         className="flex-1 text-xs bg-white p-3 rounded border border-gray-200 overflow-auto text-gray-700 font-mono"
                       >
-                        {logs[pod.name]}
+                        <HighlightedLog
+                          content={getVisibleLog(
+                            logs[pod.name],
+                            logSearches[pod.name] || "",
+                            Boolean(onlyMatchingLogLines[pod.name])
+                          )}
+                          search={logSearches[pod.name] || ""}
+                        />
                       </pre>
                     ) : (
                       <pre className="flex-1 text-xs bg-blue-50 p-3 rounded border border-blue-200 text-blue-700 font-mono">
@@ -739,7 +967,7 @@ export const PodList: React.FC = () => {
                           }}
                           className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
                         >
-                          Expandir logs →
+                          Expandir logs
                         </button>
                         <button
                           onClick={() => downloadLogs(pod.name)}
@@ -769,7 +997,7 @@ export const PodList: React.FC = () => {
       {/* Modal de logs expandidos */}
       {expandedLogPod && logs[expandedLogPod] && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-96 flex flex-col">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-6xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">Logs: {expandedLogPod}</h3>
               <button
@@ -779,11 +1007,27 @@ export const PodList: React.FC = () => {
                 <CloseIcon className="w-5 h-5" />
               </button>
             </div>
+            <div className="px-4 pt-4 bg-gray-50 border-b border-gray-200">
+              <LogSearchControls
+                search={logSearches[expandedLogPod] || ""}
+                onlyMatching={Boolean(onlyMatchingLogLines[expandedLogPod])}
+                matchCount={countLogMatches(logs[expandedLogPod], logSearches[expandedLogPod] || "")}
+                onSearchChange={(value) => updateLogSearch(expandedLogPod, value)}
+                onOnlyMatchingChange={(value) => updateOnlyMatchingLogLines(expandedLogPod, value)}
+              />
+            </div>
             <pre
               ref={expandedLogsRef}
               className="flex-1 overflow-auto text-xs bg-gray-900 text-green-400 p-4 font-mono whitespace-pre-wrap break-words"
             >
-              {logs[expandedLogPod]}
+              <HighlightedLog
+                content={getVisibleLog(
+                  logs[expandedLogPod],
+                  logSearches[expandedLogPod] || "",
+                  Boolean(onlyMatchingLogLines[expandedLogPod])
+                )}
+                search={logSearches[expandedLogPod] || ""}
+              />
             </pre>
             <div className="border-t border-gray-200 p-4 bg-gray-50 flex justify-end">
               <button

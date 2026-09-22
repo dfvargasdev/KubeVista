@@ -3,6 +3,12 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
+const LOG_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
+const SERVICE_MESH_CONTAINERS = new Set(["istio-proxy"]);
+
+export interface PodLogOptions {
+  lines?: number;
+}
 
 export interface Cluster {
   name: string;
@@ -162,53 +168,43 @@ export class KubernetesService {
     namespace: string,
     podName: string,
     clusterName: string,
-    lines: number = 100
+    options: PodLogOptions = {}
   ): Promise<string> {
     try {
-      // Get container list first via REST API (reliable)
       const api = this.getV1Api(clusterName);
       const pod = await api.readNamespacedPod(podName, namespace);
       const containerNames = (pod.body.spec?.containers || [])
-        .map((c: any) => c.name)
+        .map((container: any) => container.name)
         .filter((name: string | undefined): name is string => Boolean(name));
-
-      // Prefer app container over service mesh sidecars
-      const preferredContainers = containerNames.length > 0
-        ? [
-            ...containerNames.filter((name) => name !== "istio-proxy"),
-            ...containerNames.filter((name) => name === "istio-proxy"),
-          ]
-        : [undefined]; // no container flag = kubectl picks default
-
+      const targetContainers = this.resolveLogContainers(containerNames);
+      const lines = this.normalizeLogLines(options.lines);
       const errors: string[] = [];
+      const logChunks: string[] = [];
 
-      for (const containerName of preferredContainers) {
+      for (const containerName of targetContainers) {
         try {
-          const args = [
-            "logs",
-            podName,
-            "--namespace", namespace,
-            "--context", clusterName,
-            `--tail=${lines}`,
-          ];
-          if (containerName) {
-            args.push("--container", containerName);
-          }
-
-          const { stdout } = await execFileAsync("kubectl", args, { maxBuffer: 10 * 1024 * 1024 });
-          return stdout.length > 0
-            ? stdout
-            : `No hay logs disponibles para ${podName}${containerName ? ` (contenedor: ${containerName})` : ""}.`;
+          const args = this.buildLogArgs(namespace, podName, clusterName, containerName, lines);
+          const { stdout } = await execFileAsync("kubectl", args, {
+            maxBuffer: LOG_MAX_BUFFER_BYTES,
+            windowsHide: true,
+          });
+          const content = stdout.length > 0
+            ? stdout.trimEnd()
+            : this.emptyLogsMessage(podName, containerName);
+          logChunks.push(this.formatContainerLogs(content, containerName, targetContainers.length));
         } catch (containerError) {
           const msg = (containerError as any)?.stderr
             || (containerError as Error)?.message
             || "Error desconocido";
-          if (containerName) {
-            errors.push(`${containerName}: ${msg.trim()}`);
-          } else {
-            errors.push(msg.trim());
-          }
+          errors.push(this.formatContainerError(containerName, msg.trim()));
         }
+      }
+
+      if (logChunks.length > 0) {
+        const errorSummary = errors.length > 0
+          ? ["Contenedores con error:", ...errors].join("\n")
+          : "";
+        return [logChunks.join("\n\n"), errorSummary].filter(Boolean).join("\n\n");
       }
 
       throw new Error(
@@ -221,6 +217,67 @@ export class KubernetesService {
       }
       throw new Error(this.getKubernetesErrorMessage(error, `logs del pod "${podName}"`));
     }
+  }
+
+  private resolveLogContainers(containerNames: string[]): Array<string | undefined> {
+    if (containerNames.length === 0) {
+      return [undefined];
+    }
+
+    const appContainers = containerNames.filter((name) => !SERVICE_MESH_CONTAINERS.has(name));
+    return appContainers.length > 0 ? appContainers : containerNames;
+  }
+
+  private normalizeLogLines(lines?: number): number | undefined {
+    if (typeof lines !== "number" || !Number.isFinite(lines) || lines <= 0) {
+      return undefined;
+    }
+    return Math.floor(lines);
+  }
+
+  private buildLogArgs(
+    namespace: string,
+    podName: string,
+    clusterName: string,
+    containerName: string | undefined,
+    lines: number | undefined
+  ): string[] {
+    const args = [
+      "logs",
+      podName,
+      "--namespace",
+      namespace,
+      "--context",
+      clusterName,
+    ];
+
+    if (typeof lines === "number") {
+      args.push(`--tail=${lines}`);
+    }
+    if (containerName) {
+      args.push("--container", containerName);
+    }
+    return args;
+  }
+
+  private formatContainerLogs(
+    content: string,
+    containerName: string | undefined,
+    containerCount: number
+  ): string {
+    if (containerName && containerCount > 1) {
+      return `===== ${containerName} =====\n${content}`;
+    }
+    return content;
+  }
+
+  private emptyLogsMessage(podName: string, containerName: string | undefined): string {
+    const containerText = containerName ? ` (contenedor: ${containerName})` : "";
+    return `No hay logs disponibles para ${podName}${containerText}.`;
+  }
+
+  private formatContainerError(containerName: string | undefined, message: string): string {
+    return containerName ? `${containerName}: ${message}` : message;
   }
 
   private async runWithTlsFallback<T>(clusterName: string, operation: () => Promise<T>): Promise<T> {
