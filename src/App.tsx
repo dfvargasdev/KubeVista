@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Dashboard } from "./components/Dashboard";
+import { PayloadEncryptor } from "./tools/payload-encryptor/PayloadEncryptor";
 import {
   FiBox,
   FiExternalLink,
   FiGrid,
   FiHome,
+  FiKey,
   FiPlayCircle,
   FiTerminal,
 } from "react-icons/fi";
@@ -13,7 +15,7 @@ const HomeIcon = FiHome as React.ElementType;
 const ExternalLinkIcon = FiExternalLink as React.ElementType;
 const TerminalIcon = FiTerminal as React.ElementType;
 
-type AppView = "home" | "clusters" | "telepresence" | "prerequisites";
+type AppView = "home" | "clusters" | "telepresence" | "prerequisites" | "payload-encryptor";
 type InstallTool = "azure-cli" | "kubectl" | "kubelogin" | "all";
 const LAST_CLUSTER_KEY = "last-selected-cluster";
 
@@ -65,6 +67,12 @@ function App() {
         title: "Requisitos previos",
         description: "Instalacion de Azure CLI, kubectl y kubelogin.",
         icon: FiBox,
+      },
+      {
+        key: "payload-encryptor" as const,
+        title: "Payload Encryptor",
+        description: "Encripta y desencripta payloads con x-key y data.",
+        icon: FiKey,
       },
     ],
     []
@@ -303,7 +311,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold">KubeVista</h1>
-              <p className="text-xs text-gray-500">Version 2 · Centro de inicio</p>
+              <p className="text-xs text-gray-500">Version 2 - Centro de inicio</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -331,7 +339,7 @@ function App() {
         {view === "home" && (
           <section className="space-y-4">
             <h2 className="text-xl font-semibold">Selecciona una opcion</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {homeCards.map((card) => {
                 const CardIcon = card.icon as React.ElementType;
                 return (
@@ -569,6 +577,10 @@ function App() {
           </section>
         )}
 
+        {view === "payload-encryptor" && (
+          <PayloadEncryptor />
+        )}
+
         {actionMessage && (
           <div
             className={`text-sm rounded-lg p-3 whitespace-pre-wrap ${
@@ -585,10 +597,11 @@ function App() {
       </main>
 
       <footer className="bg-white border-t border-gray-200 px-6 py-3 text-xs text-gray-500">
-        <p>KubeVista • Kubernetes Cluster Manager • Diego Vargas (dfVargasDev)</p>
+        <p>KubeVista - Kubernetes Cluster Manager - Diego Vargas (dfVargasDev)</p>
       </footer>
     </div>
   );
 }
 
 export default App;
+
