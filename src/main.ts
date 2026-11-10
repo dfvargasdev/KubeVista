@@ -209,17 +209,18 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
-  "get-namespace-logs",
+  "get-service-logs",
   async (
     _,
     namespace: string,
+    podName: string,
     cluster: string,
     options?: { lines?: number }
   ) => {
     try {
-      return await kubeService.getNamespaceLogs(namespace, cluster, options);
+      return await kubeService.getServiceLogs(namespace, podName, cluster, options);
     } catch (error) {
-      console.error("Error getting namespace logs:", error);
+      console.error("Error getting service logs:", error);
       throw error;
     }
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useClusterStore } from "../store/clusterStore";
-import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal, FiCopy, FiCheck } from "react-icons/fi";
+import { FiTrash2, FiRefreshCw, FiFileText, FiSearch, FiX, FiDownload, FiTerminal, FiCopy, FiCheck, FiLayers } from "react-icons/fi";
 
 const RefreshIcon = FiRefreshCw as React.ElementType;
 const FileTextIcon = FiFileText as React.ElementType;
@@ -11,6 +11,7 @@ const DownloadIcon = FiDownload as React.ElementType;
 const TerminalIcon = FiTerminal as React.ElementType;
 const CopyIcon = FiCopy as React.ElementType;
 const CheckIcon = FiCheck as React.ElementType;
+const ServiceLogsIcon = FiLayers as React.ElementType;
 
 const SEARCH_KEY = "pod-search-filter";
 const PODS_REFRESH_INTERVAL_MS = 10000;
@@ -266,12 +267,13 @@ export const PodList: React.FC = () => {
   const [logSearches, setLogSearches] = useState<Record<string, string>>({});
   const [onlyMatchingLogLines, setOnlyMatchingLogLines] = useState<Record<string, boolean>>({});
   const [expandedLogPod, setExpandedLogPod] = useState<string | null>(null);
-  const [namespaceLogsOpen, setNamespaceLogsOpen] = useState(false);
-  const [namespaceLogsResult, setNamespaceLogsResult] = useState<NamespaceLogsResult | null>(null);
-  const [namespaceLogsLoading, setNamespaceLogsLoading] = useState(false);
-  const [namespaceLogsError, setNamespaceLogsError] = useState("");
-  const [namespaceLogsSearch, setNamespaceLogsSearch] = useState("");
-  const [onlyMatchingNamespaceLogLines, setOnlyMatchingNamespaceLogLines] = useState(false);
+  const [serviceLogsOpen, setServiceLogsOpen] = useState(false);
+  const [serviceLogsResult, setServiceLogsResult] = useState<ServiceLogsResult | null>(null);
+  const [serviceLogsLoading, setServiceLogsLoading] = useState(false);
+  const [serviceLogsError, setServiceLogsError] = useState("");
+  const [serviceLogsSearch, setServiceLogsSearch] = useState("");
+  const [serviceLogsPod, setServiceLogsPod] = useState<string | null>(null);
+  const [onlyMatchingServiceLogLines, setOnlyMatchingServiceLogLines] = useState(false);
   const [terminalPod, setTerminalPod] = useState<string | null>(null);
   const [terminalContainers, setTerminalContainers] = useState<string[]>([]);
   const [terminalContainer, setTerminalContainer] = useState<string>("");
@@ -357,26 +359,27 @@ export const PodList: React.FC = () => {
     }
   }, [logLineLimit, selectedCluster, selectedNamespace, setError, setLoading]);
 
-  const fetchNamespaceLogs = useCallback(async (lineLimit = logLineLimit) => {
+  const fetchServiceLogs = useCallback(async (podName: string, lineLimit = logLineLimit) => {
     if (!selectedCluster || !selectedNamespace) return;
 
-    setNamespaceLogsLoading(true);
-    setNamespaceLogsError("");
-    setNamespaceLogsResult(null);
+    setServiceLogsLoading(true);
+    setServiceLogsError("");
+    setServiceLogsResult(null);
 
     try {
-      const result = await window.api.getNamespaceLogs(
+      const result = await window.api.getServiceLogs(
         selectedNamespace,
+        podName,
         selectedCluster.name,
         { lines: parseLogLineLimit(lineLimit) }
       );
-      setNamespaceLogsResult(result);
+      setServiceLogsResult(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Error loading namespace logs";
-      setNamespaceLogsError(message);
-      console.error("Error loading namespace logs:", error);
+      const message = error instanceof Error ? error.message : "Error loading service logs";
+      setServiceLogsError(message);
+      console.error("Error loading service logs:", error);
     } finally {
-      setNamespaceLogsLoading(false);
+      setServiceLogsLoading(false);
     }
   }, [logLineLimit, selectedCluster, selectedNamespace]);
 
@@ -404,11 +407,12 @@ export const PodList: React.FC = () => {
     if (selectedCluster && selectedNamespace) {
       setSelectedPods(new Set());
       setRecoveries({});
-      setNamespaceLogsOpen(false);
-      setNamespaceLogsResult(null);
-      setNamespaceLogsError("");
-      setNamespaceLogsSearch("");
-      setOnlyMatchingNamespaceLogLines(false);
+      setServiceLogsOpen(false);
+      setServiceLogsResult(null);
+      setServiceLogsError("");
+      setServiceLogsSearch("");
+      setServiceLogsPod(null);
+      setOnlyMatchingServiceLogLines(false);
       void loadPods();
     }
   }, [selectedCluster, selectedNamespace, loadPods]);
@@ -470,14 +474,15 @@ export const PodList: React.FC = () => {
     if (activePodForLogs) {
       void fetchPodLogs(activePodForLogs, false, value);
     }
-    if (namespaceLogsOpen) {
-      void fetchNamespaceLogs(value);
+    if (serviceLogsOpen && serviceLogsPod) {
+      void fetchServiceLogs(serviceLogsPod, value);
     }
   };
 
-  const openNamespaceLogs = () => {
-    setNamespaceLogsOpen(true);
-    void fetchNamespaceLogs();
+  const openServiceLogs = (podName: string) => {
+    setServiceLogsPod(podName);
+    setServiceLogsOpen(true);
+    void fetchServiceLogs(podName);
   };
 
   const handleViewLogs = async (podName: string) => {
@@ -517,16 +522,16 @@ export const PodList: React.FC = () => {
     downloadTextFile(content, filename);
   };
 
-  const downloadNamespaceLogs = () => {
-    if (!namespaceLogsResult || !selectedNamespace) {
-      setNamespaceLogsError("No hay logs agregados para descargar.");
+  const downloadServiceLogs = () => {
+    if (!serviceLogsResult) {
+      setServiceLogsError("No hay logs del servicio para descargar.");
       return;
     }
 
-    const safeTs = namespaceLogsResult.generatedAt.replace(/[:.]/g, "-");
+    const safeTs = serviceLogsResult.generatedAt.replace(/[:.]/g, "-");
     downloadTextFile(
-      namespaceLogsResult.content,
-      `${selectedNamespace}-todos-los-pods-${safeTs}.log`
+      serviceLogsResult.content,
+      `${serviceLogsResult.serviceName}-todos-los-pods-${safeTs}.log`
     );
   };
 
@@ -861,14 +866,6 @@ export const PodList: React.FC = () => {
           <RefreshIcon className="w-4 h-4" />
         </button>
         <button
-          onClick={openNamespaceLogs}
-          className="flex-shrink-0 inline-flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          title="Ver y buscar los logs de todos los pods del namespace"
-        >
-          <FileTextIcon className="w-4 h-4" />
-          Logs de todos
-        </button>
-        <button
           onClick={() => void deletePodsBulk(Array.from(selectedPods))}
           disabled={selectedPods.size === 0}
           className="flex-shrink-0 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
@@ -919,7 +916,7 @@ export const PodList: React.FC = () => {
               <div className="w-20">Status</div>
               <div className="w-16">Restarts</div>
               <div className="w-12">Age</div>
-              <div className="w-36">Actions</div>
+              <div className="w-44">Actions</div>
             </div>
 
             {filteredPods.map((pod) => (
@@ -948,7 +945,7 @@ export const PodList: React.FC = () => {
                   </div>
                   <div className="w-16 text-sm font-medium text-gray-900">{pod.restarts}</div>
                   <div className="w-12 text-sm text-gray-600">{pod.age || "-"}</div>
-                  <div className="w-36 flex items-center gap-2">
+                  <div className="w-44 flex items-center gap-2">
                     <button
                       onClick={() => void copyServiceName(pod.name)}
                       className="p-1 hover:bg-gray-200 rounded transition"
@@ -964,6 +961,13 @@ export const PodList: React.FC = () => {
                       title="View logs"
                     >
                       <FileTextIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => openServiceLogs(pod.name)}
+                      className="p-1 hover:bg-blue-100 text-blue-700 rounded transition"
+                      title="Ver logs de todas las replicas del servicio"
+                    >
+                      <ServiceLogsIcon className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => openTerminal(pod.name)}
@@ -1061,28 +1065,30 @@ export const PodList: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de logs agregados del namespace */}
-      {namespaceLogsOpen && (
+      {/* Modal de logs de todas las replicas del servicio */}
+      {serviceLogsOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-7xl h-[90vh] flex flex-col">
             <div className="flex items-center justify-between gap-4 p-4 border-b border-gray-200">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Logs de todos los pods</h3>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Logs del servicio: {serviceLogsResult?.serviceName || serviceLogsPod}
+                </h3>
                 <p className="text-xs text-gray-500">
-                  Namespace: {selectedNamespace} · cada linea identifica su pod y contenedor
+                  Namespace: {selectedNamespace} · pod de referencia: {serviceLogsPod}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => void fetchNamespaceLogs()}
-                  disabled={namespaceLogsLoading}
+                  onClick={() => serviceLogsPod && void fetchServiceLogs(serviceLogsPod)}
+                  disabled={serviceLogsLoading || !serviceLogsPod}
                   className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition"
                 >
-                  <RefreshIcon className={`w-4 h-4 ${namespaceLogsLoading ? "animate-spin" : ""}`} />
+                  <RefreshIcon className={`w-4 h-4 ${serviceLogsLoading ? "animate-spin" : ""}`} />
                   Actualizar
                 </button>
                 <button
-                  onClick={() => setNamespaceLogsOpen(false)}
+                  onClick={() => setServiceLogsOpen(false)}
                   className="p-2 hover:bg-gray-100 rounded transition"
                   title="Cerrar"
                 >
@@ -1091,42 +1097,42 @@ export const PodList: React.FC = () => {
               </div>
             </div>
 
-            {namespaceLogsResult && (
+            {serviceLogsResult && (
               <div className="px-4 pt-3 bg-gray-50 border-b border-gray-200">
                 <LogSearchControls
-                  search={namespaceLogsSearch}
-                  onlyMatching={onlyMatchingNamespaceLogLines}
-                  matchCount={countLogMatches(namespaceLogsResult.content, namespaceLogsSearch)}
-                  onSearchChange={setNamespaceLogsSearch}
-                  onOnlyMatchingChange={setOnlyMatchingNamespaceLogLines}
+                  search={serviceLogsSearch}
+                  onlyMatching={onlyMatchingServiceLogLines}
+                  matchCount={countLogMatches(serviceLogsResult.content, serviceLogsSearch)}
+                  onSearchChange={setServiceLogsSearch}
+                  onOnlyMatchingChange={setOnlyMatchingServiceLogLines}
                 />
-                <p className={`pb-3 text-xs ${namespaceLogsResult.errorCount > 0 ? "text-amber-700" : "text-gray-500"}`}>
-                  {namespaceLogsResult.podCount} pods · {namespaceLogsResult.successfulContainerCount} de {namespaceLogsResult.containerCount} contenedores consultados
-                  {namespaceLogsResult.errorCount > 0 ? ` · ${namespaceLogsResult.errorCount} con error` : ""}
-                  {` · ${new Date(namespaceLogsResult.generatedAt).toLocaleString()}`}
+                <p className={`pb-3 text-xs ${serviceLogsResult.errorCount > 0 ? "text-amber-700" : "text-gray-500"}`}>
+                  {serviceLogsResult.podCount} replicas · {serviceLogsResult.successfulContainerCount} de {serviceLogsResult.containerCount} contenedores consultados
+                  {serviceLogsResult.errorCount > 0 ? ` · ${serviceLogsResult.errorCount} con error` : ""}
+                  {` · ${new Date(serviceLogsResult.generatedAt).toLocaleString()}`}
                 </p>
               </div>
             )}
 
             <div className="flex-1 min-h-0 bg-gray-900">
-              {namespaceLogsLoading ? (
+              {serviceLogsLoading ? (
                 <div className="h-full flex items-center justify-center text-sm text-green-300">
                   <RefreshIcon className="w-5 h-5 mr-2 animate-spin" />
-                  Consultando logs de todos los pods...
+                  Consultando logs de las replicas del servicio...
                 </div>
-              ) : namespaceLogsError ? (
+              ) : serviceLogsError ? (
                 <pre className="h-full overflow-auto text-xs bg-red-950 text-red-200 p-4 font-mono whitespace-pre-wrap break-words">
-                  {namespaceLogsError}
+                  {serviceLogsError}
                 </pre>
-              ) : namespaceLogsResult ? (
+              ) : serviceLogsResult ? (
                 <pre className="h-full overflow-auto text-xs text-green-400 p-4 font-mono whitespace-pre-wrap break-words">
                   <HighlightedLog
                     content={getVisibleLog(
-                      namespaceLogsResult.content,
-                      namespaceLogsSearch,
-                      onlyMatchingNamespaceLogLines
+                      serviceLogsResult.content,
+                      serviceLogsSearch,
+                      onlyMatchingServiceLogLines
                     )}
-                    search={namespaceLogsSearch}
+                    search={serviceLogsSearch}
                   />
                 </pre>
               ) : null}
@@ -1138,15 +1144,15 @@ export const PodList: React.FC = () => {
               </p>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={downloadNamespaceLogs}
-                  disabled={!namespaceLogsResult || namespaceLogsLoading}
+                  onClick={downloadServiceLogs}
+                  disabled={!serviceLogsResult || serviceLogsLoading}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 disabled:opacity-50 transition"
                 >
                   <DownloadIcon className="w-4 h-4" />
-                  Descargar todos
+                  Descargar logs del servicio
                 </button>
                 <button
-                  onClick={() => setNamespaceLogsOpen(false)}
+                  onClick={() => setServiceLogsOpen(false)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                 >
                   Cerrar

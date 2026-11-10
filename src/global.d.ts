@@ -2,8 +2,9 @@ interface PodLogsOptions {
   lines?: number;
 }
 
-interface NamespaceLogsResult {
+interface ServiceLogsResult {
   content: string;
+  serviceName: string;
   podCount: number;
   containerCount: number;
   successfulContainerCount: number;
@@ -22,11 +23,12 @@ interface Window {
       cluster: string,
       options?: PodLogsOptions
     ) => Promise<string>;
-    getNamespaceLogs: (
+    getServiceLogs: (
       namespace: string,
+      podName: string,
       cluster: string,
       options?: PodLogsOptions
-    ) => Promise<NamespaceLogsResult>;
+    ) => Promise<ServiceLogsResult>;
     deletePod: (namespace: string, podName: string, cluster: string) => Promise<void>;
     getPodContainers: (namespace: string, podName: string, cluster: string) => Promise<string[]>;
     getConfigMaps: (namespace: string, cluster: string) => Promise<any[]>;

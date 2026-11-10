@@ -1,16 +1,17 @@
-export interface NamespaceContainerLog {
+export interface ServiceContainerLog {
   podName: string;
   containerName?: string;
   content: string;
   error?: string;
 }
 
-export interface NamespaceLogFormatOptions {
+export interface ServiceLogFormatOptions {
   clusterName: string;
   namespace: string;
+  serviceName: string;
   generatedAt: string;
   podCount: number;
-  containerLogs: NamespaceContainerLog[];
+  containerLogs: ServiceContainerLog[];
 }
 
 interface FormattedLogLine {
@@ -20,11 +21,11 @@ interface FormattedLogLine {
 
 const KUBERNETES_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
-function getSourceLabel(log: NamespaceContainerLog): string {
+function getSourceLabel(log: ServiceContainerLog): string {
   return `${log.podName}/${log.containerName || "default"}`;
 }
 
-function formatLogLines(log: NamespaceContainerLog): FormattedLogLine[] {
+function formatLogLines(log: ServiceContainerLog): FormattedLogLine[] {
   const source = getSourceLabel(log);
 
   return log.content
@@ -46,7 +47,7 @@ function formatLogLines(log: NamespaceContainerLog): FormattedLogLine[] {
     });
 }
 
-export function formatNamespaceLogsContent(options: NamespaceLogFormatOptions): string {
+export function formatServiceLogsContent(options: ServiceLogFormatOptions): string {
   const successfulLogs = options.containerLogs.filter((log) => !log.error);
   const failedLogs = options.containerLogs.filter((log) => Boolean(log.error));
   const logLines = successfulLogs
@@ -55,9 +56,10 @@ export function formatNamespaceLogsContent(options: NamespaceLogFormatOptions): 
     .map((line) => line.text);
 
   const header = [
-    "# KubeVista - logs agregados",
+    "# KubeVista - logs del servicio",
     `# Cluster: ${options.clusterName}`,
     `# Namespace: ${options.namespace}`,
+    `# Servicio: ${options.serviceName}`,
     `# Generado: ${options.generatedAt}`,
     `# Pods: ${options.podCount} | Contenedores: ${options.containerLogs.length} | Errores: ${failedLogs.length}`,
   ];
@@ -66,7 +68,7 @@ export function formatNamespaceLogsContent(options: NamespaceLogFormatOptions): 
     ? logLines
     : [options.containerLogs.length > 0
       ? "# No hay lineas de log disponibles para los contenedores consultados."
-      : "# No hay pods en este namespace."];
+      : "# No hay pods disponibles para este servicio."];
 
   const errorSection = failedLogs.length > 0
     ? [

@@ -210,16 +210,18 @@ Store logs in local state
 Render logs section with <pre> tag
 ```
 
-### 4. Ver logs de todos los pods
+### 4. Ver logs de todas las réplicas de un servicio
 
 ```
-User clicks "Logs de todos"
+User clicks "Logs del servicio" on a pod
         ↓
-window.api.getNamespaceLogs(namespace, cluster, options)
+window.api.getServiceLogs(namespace, podName, cluster, options)
         ↓
-Main Process handles "get-namespace-logs"
+Main Process handles "get-service-logs"
         ↓
-KubernetesService lists pods and application containers
+KubernetesService resolves the selected pod workload/controller
+        ↓
+Pods from the same workload are selected with their application containers
         ↓
 kubectl reads logs with bounded concurrency and timestamps
         ↓

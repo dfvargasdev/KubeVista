@@ -1,19 +1,21 @@
 import * as k8s from "@kubernetes/client-node";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { formatNamespaceLogsContent, NamespaceContainerLog } from "./namespaceLogFormatter";
+import { getPodWorkloadIdentity } from "./podWorkload";
+import { formatServiceLogsContent, ServiceContainerLog } from "./serviceLogFormatter";
 
 const execFileAsync = promisify(execFile);
 const LOG_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
-const NAMESPACE_LOG_CONCURRENCY = 4;
+const SERVICE_LOG_CONCURRENCY = 4;
 const SERVICE_MESH_CONTAINERS = new Set(["istio-proxy"]);
 
 export interface PodLogOptions {
   lines?: number;
 }
 
-export interface NamespaceLogsResult {
+export interface ServiceLogsResult {
   content: string;
+  serviceName: string;
   podCount: number;
   containerCount: number;
   successfulContainerCount: number;
@@ -230,18 +232,28 @@ export class KubernetesService {
     }
   }
 
-  async getNamespaceLogs(
+  async getServiceLogs(
     namespace: string,
+    podName: string,
     clusterName: string,
     options: PodLogOptions = {}
-  ): Promise<NamespaceLogsResult> {
+  ): Promise<ServiceLogsResult> {
     try {
       const pods = await this.runWithTlsFallback(clusterName, async () => {
         const api = this.getV1Api(clusterName);
         const response = await api.listNamespacedPod(namespace);
         return response.body.items;
       });
-      const podTargets = pods
+      const selectedPod = pods.find((pod: any) => pod.metadata?.name === podName);
+      if (!selectedPod) {
+        throw new Error(`No se encontro el pod "${podName}" en el namespace "${namespace}".`);
+      }
+
+      const selectedWorkload = getPodWorkloadIdentity(selectedPod);
+      const servicePods = pods.filter((pod: any) => (
+        getPodWorkloadIdentity(pod).key === selectedWorkload.key
+      ));
+      const podTargets = servicePods
         .map((pod: any) => ({
           podName: pod.metadata?.name as string | undefined,
           containerNames: (pod.spec?.containers || [])
@@ -259,10 +271,10 @@ export class KubernetesService {
       const lines = this.normalizeLogLines(options.lines);
       const containerLogs = await this.mapWithConcurrency(
         containerTargets,
-        NAMESPACE_LOG_CONCURRENCY,
-        ({ podName, containerName }) => this.readNamespaceContainerLogs(
+        SERVICE_LOG_CONCURRENCY,
+        ({ podName: targetPodName, containerName }) => this.readServiceContainerLogs(
           namespace,
-          podName,
+          targetPodName,
           containerName,
           clusterName,
           lines
@@ -272,13 +284,15 @@ export class KubernetesService {
       const errorCount = containerLogs.filter((log) => Boolean(log.error)).length;
 
       return {
-        content: formatNamespaceLogsContent({
+        content: formatServiceLogsContent({
           clusterName,
           namespace,
+          serviceName: selectedWorkload.displayName,
           generatedAt,
           podCount: podTargets.length,
           containerLogs,
         }),
+        serviceName: selectedWorkload.displayName,
         podCount: podTargets.length,
         containerCount: containerTargets.length,
         successfulContainerCount: containerTargets.length - errorCount,
@@ -286,18 +300,18 @@ export class KubernetesService {
         generatedAt,
       };
     } catch (error) {
-      console.error("Error fetching namespace logs:", error);
-      throw new Error(this.getKubernetesErrorMessage(error, `logs del namespace "${namespace}"`));
+      console.error("Error fetching service logs:", error);
+      throw new Error(this.getKubernetesErrorMessage(error, `logs del servicio del pod "${podName}"`));
     }
   }
 
-  private async readNamespaceContainerLogs(
+  private async readServiceContainerLogs(
     namespace: string,
     podName: string,
     containerName: string | undefined,
     clusterName: string,
     lines: number | undefined
-  ): Promise<NamespaceContainerLog> {
+  ): Promise<ServiceContainerLog> {
     try {
       const args = this.buildLogArgs(namespace, podName, clusterName, containerName, lines, true);
       const { stdout } = await execFileAsync("kubectl", args, {

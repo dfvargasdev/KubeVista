@@ -104,7 +104,7 @@ Generará los artefactos en la carpeta `out-kubevista/`:
 - `KubeVista-1.1.0-win-x64-setup.exe` - Instalador NSIS interactivo
 - `KubeVista-1.1.0-win-x64-portable.exe` - Versión portable
 
-La vista agregada de logs no requiere Stern. El equipo donde se ejecute KubeVista debe tener `kubectl` disponible y acceso al cluster mediante kubeconfig.
+La vista agregada de logs por servicio no requiere Stern. El equipo donde se ejecute KubeVista debe tener `kubectl` disponible y acceso al cluster mediante kubeconfig.
 
 ### macOS
 ```bash

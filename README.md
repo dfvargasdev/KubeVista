@@ -2,9 +2,9 @@
 
 Un gestor visual de clusters Kubernetes inspirado en Lens, construido con Electron y React.
 
-## Logs agregados
+## Logs agregados por servicio
 
-Desde la lista de pods se puede abrir **Logs de todos** para consultar en una sola vista los logs de todos los pods del namespace seleccionado. Cada línea incluye el origen `[pod/contenedor]`, se puede buscar o mostrar solo coincidencias y descargar el resultado completo en un archivo `.log`.
+Desde la acción **Logs del servicio** de un pod se pueden consultar en una sola vista los logs de todas las réplicas de su mismo workload (Deployment, StatefulSet, DaemonSet u otro controlador). No se incluyen pods de otros servicios del namespace. Cada línea indica el origen `[pod/contenedor]`; además, se puede buscar, mostrar solo coincidencias y descargar el resultado completo en un archivo `.log`.
 
 La consulta usa `kubectl`, respeta el límite de líneas seleccionado y ejecuta como máximo cuatro lecturas simultáneas. No requiere instalar Stern.
 
