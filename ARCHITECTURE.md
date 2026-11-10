@@ -210,6 +210,24 @@ Store logs in local state
 Render logs section with <pre> tag
 ```
 
+### 4. Ver logs de todos los pods
+
+```
+User clicks "Logs de todos"
+        ↓
+window.api.getNamespaceLogs(namespace, cluster, options)
+        ↓
+Main Process handles "get-namespace-logs"
+        ↓
+KubernetesService lists pods and application containers
+        ↓
+kubectl reads logs with bounded concurrency and timestamps
+        ↓
+Lines are merged chronologically with [pod/container] prefixes
+        ↓
+Renderer supports search, matching-line filters and .log download
+```
+
 ## Seguridad
 
 ### Context Isolation

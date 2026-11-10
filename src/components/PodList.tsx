@@ -67,6 +67,18 @@ function parseLogLineLimit(limit: LogLineLimit): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function downloadTextFile(content: string, filename: string): void {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -254,6 +266,12 @@ export const PodList: React.FC = () => {
   const [logSearches, setLogSearches] = useState<Record<string, string>>({});
   const [onlyMatchingLogLines, setOnlyMatchingLogLines] = useState<Record<string, boolean>>({});
   const [expandedLogPod, setExpandedLogPod] = useState<string | null>(null);
+  const [namespaceLogsOpen, setNamespaceLogsOpen] = useState(false);
+  const [namespaceLogsResult, setNamespaceLogsResult] = useState<NamespaceLogsResult | null>(null);
+  const [namespaceLogsLoading, setNamespaceLogsLoading] = useState(false);
+  const [namespaceLogsError, setNamespaceLogsError] = useState("");
+  const [namespaceLogsSearch, setNamespaceLogsSearch] = useState("");
+  const [onlyMatchingNamespaceLogLines, setOnlyMatchingNamespaceLogLines] = useState(false);
   const [terminalPod, setTerminalPod] = useState<string | null>(null);
   const [terminalContainers, setTerminalContainers] = useState<string[]>([]);
   const [terminalContainer, setTerminalContainer] = useState<string>("");
@@ -339,6 +357,29 @@ export const PodList: React.FC = () => {
     }
   }, [logLineLimit, selectedCluster, selectedNamespace, setError, setLoading]);
 
+  const fetchNamespaceLogs = useCallback(async (lineLimit = logLineLimit) => {
+    if (!selectedCluster || !selectedNamespace) return;
+
+    setNamespaceLogsLoading(true);
+    setNamespaceLogsError("");
+    setNamespaceLogsResult(null);
+
+    try {
+      const result = await window.api.getNamespaceLogs(
+        selectedNamespace,
+        selectedCluster.name,
+        { lines: parseLogLineLimit(lineLimit) }
+      );
+      setNamespaceLogsResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error loading namespace logs";
+      setNamespaceLogsError(message);
+      console.error("Error loading namespace logs:", error);
+    } finally {
+      setNamespaceLogsLoading(false);
+    }
+  }, [logLineLimit, selectedCluster, selectedNamespace]);
+
   // Scroll inline logs: force-scroll to bottom on first open, tail-follow on auto-refresh.
   useEffect(() => {
     if (!expandedPod || !logs[expandedPod]) return;
@@ -363,6 +404,11 @@ export const PodList: React.FC = () => {
     if (selectedCluster && selectedNamespace) {
       setSelectedPods(new Set());
       setRecoveries({});
+      setNamespaceLogsOpen(false);
+      setNamespaceLogsResult(null);
+      setNamespaceLogsError("");
+      setNamespaceLogsSearch("");
+      setOnlyMatchingNamespaceLogLines(false);
       void loadPods();
     }
   }, [selectedCluster, selectedNamespace, loadPods]);
@@ -424,6 +470,14 @@ export const PodList: React.FC = () => {
     if (activePodForLogs) {
       void fetchPodLogs(activePodForLogs, false, value);
     }
+    if (namespaceLogsOpen) {
+      void fetchNamespaceLogs(value);
+    }
+  };
+
+  const openNamespaceLogs = () => {
+    setNamespaceLogsOpen(true);
+    void fetchNamespaceLogs();
   };
 
   const handleViewLogs = async (podName: string) => {
@@ -460,15 +514,20 @@ export const PodList: React.FC = () => {
     const now = new Date();
     const safeTs = now.toISOString().replace(/[:.]/g, "-");
     const filename = `${podName}-${safeTs}.log`;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadTextFile(content, filename);
+  };
+
+  const downloadNamespaceLogs = () => {
+    if (!namespaceLogsResult || !selectedNamespace) {
+      setNamespaceLogsError("No hay logs agregados para descargar.");
+      return;
+    }
+
+    const safeTs = namespaceLogsResult.generatedAt.replace(/[:.]/g, "-");
+    downloadTextFile(
+      namespaceLogsResult.content,
+      `${selectedNamespace}-todos-los-pods-${safeTs}.log`
+    );
   };
 
   const monitorRecovery = async (
@@ -749,7 +808,7 @@ export const PodList: React.FC = () => {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header con buscador */}
-      <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-white flex items-center justify-between gap-4">
+      <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-white flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-lg font-semibold whitespace-nowrap">
           Pods en <span className="text-blue-600">{selectedNamespace}</span>
           <span className="ml-2 text-sm font-normal text-gray-400">
@@ -800,6 +859,14 @@ export const PodList: React.FC = () => {
           title="Refresh pods"
         >
           <RefreshIcon className="w-4 h-4" />
+        </button>
+        <button
+          onClick={openNamespaceLogs}
+          className="flex-shrink-0 inline-flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          title="Ver y buscar los logs de todos los pods del namespace"
+        >
+          <FileTextIcon className="w-4 h-4" />
+          Logs de todos
         </button>
         <button
           onClick={() => void deletePodsBulk(Array.from(selectedPods))}
@@ -990,6 +1057,102 @@ export const PodList: React.FC = () => {
         <div className="fixed bottom-4 right-4 z-50 pointer-events-none">
           <div className="max-w-[36rem] bg-gray-900 text-white text-xs px-3 py-2 rounded-lg shadow-lg border border-gray-700">
             Servicio copiado: <span className="font-mono text-green-300">{copiedServiceValue}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de logs agregados del namespace */}
+      {namespaceLogsOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-7xl h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between gap-4 p-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Logs de todos los pods</h3>
+                <p className="text-xs text-gray-500">
+                  Namespace: {selectedNamespace} · cada linea identifica su pod y contenedor
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => void fetchNamespaceLogs()}
+                  disabled={namespaceLogsLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition"
+                >
+                  <RefreshIcon className={`w-4 h-4 ${namespaceLogsLoading ? "animate-spin" : ""}`} />
+                  Actualizar
+                </button>
+                <button
+                  onClick={() => setNamespaceLogsOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded transition"
+                  title="Cerrar"
+                >
+                  <CloseIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {namespaceLogsResult && (
+              <div className="px-4 pt-3 bg-gray-50 border-b border-gray-200">
+                <LogSearchControls
+                  search={namespaceLogsSearch}
+                  onlyMatching={onlyMatchingNamespaceLogLines}
+                  matchCount={countLogMatches(namespaceLogsResult.content, namespaceLogsSearch)}
+                  onSearchChange={setNamespaceLogsSearch}
+                  onOnlyMatchingChange={setOnlyMatchingNamespaceLogLines}
+                />
+                <p className={`pb-3 text-xs ${namespaceLogsResult.errorCount > 0 ? "text-amber-700" : "text-gray-500"}`}>
+                  {namespaceLogsResult.podCount} pods · {namespaceLogsResult.successfulContainerCount} de {namespaceLogsResult.containerCount} contenedores consultados
+                  {namespaceLogsResult.errorCount > 0 ? ` · ${namespaceLogsResult.errorCount} con error` : ""}
+                  {` · ${new Date(namespaceLogsResult.generatedAt).toLocaleString()}`}
+                </p>
+              </div>
+            )}
+
+            <div className="flex-1 min-h-0 bg-gray-900">
+              {namespaceLogsLoading ? (
+                <div className="h-full flex items-center justify-center text-sm text-green-300">
+                  <RefreshIcon className="w-5 h-5 mr-2 animate-spin" />
+                  Consultando logs de todos los pods...
+                </div>
+              ) : namespaceLogsError ? (
+                <pre className="h-full overflow-auto text-xs bg-red-950 text-red-200 p-4 font-mono whitespace-pre-wrap break-words">
+                  {namespaceLogsError}
+                </pre>
+              ) : namespaceLogsResult ? (
+                <pre className="h-full overflow-auto text-xs text-green-400 p-4 font-mono whitespace-pre-wrap break-words">
+                  <HighlightedLog
+                    content={getVisibleLog(
+                      namespaceLogsResult.content,
+                      namespaceLogsSearch,
+                      onlyMatchingNamespaceLogLines
+                    )}
+                    search={namespaceLogsSearch}
+                  />
+                </pre>
+              ) : null}
+            </div>
+
+            <div className="border-t border-gray-200 p-4 bg-gray-50 flex items-center justify-between gap-3">
+              <p className="text-xs text-gray-500">
+                Se usa kubectl con un maximo de cuatro consultas simultaneas; no requiere Stern.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={downloadNamespaceLogs}
+                  disabled={!namespaceLogsResult || namespaceLogsLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 disabled:opacity-50 transition"
+                >
+                  <DownloadIcon className="w-4 h-4" />
+                  Descargar todos
+                </button>
+                <button
+                  onClick={() => setNamespaceLogsOpen(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

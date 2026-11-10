@@ -4,6 +4,15 @@ interface PodLogsOptions {
   lines?: number;
 }
 
+interface NamespaceLogsResult {
+  content: string;
+  podCount: number;
+  containerCount: number;
+  successfulContainerCount: number;
+  errorCount: number;
+  generatedAt: string;
+}
+
 interface IpcApi {
   getClusters: () => Promise<any>;
   getPods: (namespace: string, cluster: string) => Promise<any>;
@@ -14,6 +23,11 @@ interface IpcApi {
     cluster: string,
     options?: PodLogsOptions
   ) => Promise<string>;
+  getNamespaceLogs: (
+    namespace: string,
+    cluster: string,
+    options?: PodLogsOptions
+  ) => Promise<NamespaceLogsResult>;
   deletePod: (namespace: string, podName: string, cluster: string) => Promise<void>;
   getPodContainers: (namespace: string, podName: string, cluster: string) => Promise<string[]>;
   getConfigMaps: (namespace: string, cluster: string) => Promise<any[]>;
@@ -45,6 +59,11 @@ const api: IpcApi = {
     cluster: string,
     options?: PodLogsOptions
   ) => ipcRenderer.invoke("get-pod-logs", namespace, podName, cluster, options),
+  getNamespaceLogs: (
+    namespace: string,
+    cluster: string,
+    options?: PodLogsOptions
+  ) => ipcRenderer.invoke("get-namespace-logs", namespace, cluster, options),
   deletePod: (namespace: string, podName: string, cluster: string) =>
     ipcRenderer.invoke("delete-pod", namespace, podName, cluster),
   getPodContainers: (namespace: string, podName: string, cluster: string) =>

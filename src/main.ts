@@ -208,6 +208,23 @@ ipcMain.handle(
   }
 );
 
+ipcMain.handle(
+  "get-namespace-logs",
+  async (
+    _,
+    namespace: string,
+    cluster: string,
+    options?: { lines?: number }
+  ) => {
+    try {
+      return await kubeService.getNamespaceLogs(namespace, cluster, options);
+    } catch (error) {
+      console.error("Error getting namespace logs:", error);
+      throw error;
+    }
+  }
+);
+
 ipcMain.handle("delete-pod", async (_, namespace: string, podName: string, cluster: string) => {
   try {
     return await kubeService.deletePod(namespace, podName, cluster);

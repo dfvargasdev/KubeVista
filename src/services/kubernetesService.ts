@@ -1,13 +1,24 @@
 import * as k8s from "@kubernetes/client-node";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { formatNamespaceLogsContent, NamespaceContainerLog } from "./namespaceLogFormatter";
 
 const execFileAsync = promisify(execFile);
 const LOG_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
+const NAMESPACE_LOG_CONCURRENCY = 4;
 const SERVICE_MESH_CONTAINERS = new Set(["istio-proxy"]);
 
 export interface PodLogOptions {
   lines?: number;
+}
+
+export interface NamespaceLogsResult {
+  content: string;
+  podCount: number;
+  containerCount: number;
+  successfulContainerCount: number;
+  errorCount: number;
+  generatedAt: string;
 }
 
 export interface Cluster {
@@ -219,6 +230,120 @@ export class KubernetesService {
     }
   }
 
+  async getNamespaceLogs(
+    namespace: string,
+    clusterName: string,
+    options: PodLogOptions = {}
+  ): Promise<NamespaceLogsResult> {
+    try {
+      const pods = await this.runWithTlsFallback(clusterName, async () => {
+        const api = this.getV1Api(clusterName);
+        const response = await api.listNamespacedPod(namespace);
+        return response.body.items;
+      });
+      const podTargets = pods
+        .map((pod: any) => ({
+          podName: pod.metadata?.name as string | undefined,
+          containerNames: (pod.spec?.containers || [])
+            .map((container: any) => container.name)
+            .filter((name: string | undefined): name is string => Boolean(name)),
+        }))
+        .filter((pod): pod is { podName: string; containerNames: string[] } => Boolean(pod.podName))
+        .sort((left, right) => left.podName.localeCompare(right.podName));
+      const containerTargets = podTargets.flatMap((pod) => (
+        this.resolveLogContainers(pod.containerNames).map((containerName) => ({
+          podName: pod.podName,
+          containerName,
+        }))
+      ));
+      const lines = this.normalizeLogLines(options.lines);
+      const containerLogs = await this.mapWithConcurrency(
+        containerTargets,
+        NAMESPACE_LOG_CONCURRENCY,
+        ({ podName, containerName }) => this.readNamespaceContainerLogs(
+          namespace,
+          podName,
+          containerName,
+          clusterName,
+          lines
+        )
+      );
+      const generatedAt = new Date().toISOString();
+      const errorCount = containerLogs.filter((log) => Boolean(log.error)).length;
+
+      return {
+        content: formatNamespaceLogsContent({
+          clusterName,
+          namespace,
+          generatedAt,
+          podCount: podTargets.length,
+          containerLogs,
+        }),
+        podCount: podTargets.length,
+        containerCount: containerTargets.length,
+        successfulContainerCount: containerTargets.length - errorCount,
+        errorCount,
+        generatedAt,
+      };
+    } catch (error) {
+      console.error("Error fetching namespace logs:", error);
+      throw new Error(this.getKubernetesErrorMessage(error, `logs del namespace "${namespace}"`));
+    }
+  }
+
+  private async readNamespaceContainerLogs(
+    namespace: string,
+    podName: string,
+    containerName: string | undefined,
+    clusterName: string,
+    lines: number | undefined
+  ): Promise<NamespaceContainerLog> {
+    try {
+      const args = this.buildLogArgs(namespace, podName, clusterName, containerName, lines, true);
+      const { stdout } = await execFileAsync("kubectl", args, {
+        maxBuffer: LOG_MAX_BUFFER_BYTES,
+        windowsHide: true,
+      });
+
+      return {
+        podName,
+        containerName,
+        content: stdout.trimEnd(),
+      };
+    } catch (error) {
+      const message = (error as any)?.stderr
+        || (error as Error)?.message
+        || "Error desconocido";
+
+      return {
+        podName,
+        containerName,
+        content: "",
+        error: message.trim(),
+      };
+    }
+  }
+
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    operation: (item: T) => Promise<R>
+  ): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await operation(items[currentIndex]);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
+  }
+
   private resolveLogContainers(containerNames: string[]): Array<string | undefined> {
     if (containerNames.length === 0) {
       return [undefined];
@@ -240,7 +365,8 @@ export class KubernetesService {
     podName: string,
     clusterName: string,
     containerName: string | undefined,
-    lines: number | undefined
+    lines: number | undefined,
+    timestamps = false
   ): string[] {
     const args = [
       "logs",
@@ -253,6 +379,9 @@ export class KubernetesService {
 
     if (typeof lines === "number") {
       args.push(`--tail=${lines}`);
+    }
+    if (timestamps) {
+      args.push("--timestamps=true");
     }
     if (containerName) {
       args.push("--container", containerName);

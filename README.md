@@ -2,6 +2,12 @@
 
 Un gestor visual de clusters Kubernetes inspirado en Lens, construido con Electron y React.
 
+## Logs agregados
+
+Desde la lista de pods se puede abrir **Logs de todos** para consultar en una sola vista los logs de todos los pods del namespace seleccionado. Cada línea incluye el origen `[pod/contenedor]`, se puede buscar o mostrar solo coincidencias y descargar el resultado completo en un archivo `.log`.
+
+La consulta usa `kubectl`, respeta el límite de líneas seleccionado y ejecuta como máximo cuatro lecturas simultáneas. No requiere instalar Stern.
+
 ## ✨ Características
 
 - 📊 **Visualización de Clusters**: Gestiona múltiples clusters de Kubernetes
@@ -71,6 +77,7 @@ tailwind.config.js    # Configuración Tailwind
 - `npm run build` - Build para producción
 - `npm run compile` - Compila TypeScript
 - `npm run test` - Ejecuta pruebas
+- `npm run package:win-nsis` - Genera instalador NSIS y ejecutable portable para Windows
 
 ## 🛠️ Stack Tecnológico
 
