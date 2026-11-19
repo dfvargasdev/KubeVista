@@ -3,6 +3,9 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { getPodWorkloadIdentity } from "./podWorkload";
 import { formatServiceLogsContent, ServiceContainerLog } from "./serviceLogFormatter";
+import { getPodPorts, PodPort } from "./podPorts";
+
+export type { PodPort } from "./podPorts";
 
 const execFileAsync = promisify(execFile);
 const LOG_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
@@ -39,6 +42,7 @@ export interface Pod {
   cpu?: string;
   memory?: string;
   containers?: number;
+  ports: PodPort[];
 }
 
 export interface Namespace {
@@ -153,7 +157,7 @@ export class KubernetesService {
 
         return {
           name: pod.metadata?.name || "Unknown",
-          namespace: pod.metadata?.namespace || "Unknown",
+          namespace: pod.metadata?.namespace || namespace,
           status: pod.status?.phase || "Unknown",
           image: pod.spec?.containers[0]?.image || "Unknown",
           restarts: totalRestarts,
@@ -161,6 +165,7 @@ export class KubernetesService {
           cpu: cpu ? cpu.toString() : undefined,
           memory: memory ? memory.toString() : undefined,
           containers: pod.spec?.containers?.length || 0,
+          ports: getPodPorts(pod),
         };
       });
       });

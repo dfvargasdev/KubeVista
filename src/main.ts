@@ -3,6 +3,10 @@ import * as path from "path";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { KubernetesService } from "./services/kubernetesService";
+import {
+  PortForwardManager,
+  PortForwardRequest,
+} from "./services/portForwardManager";
 
 const execFileAsync = promisify(execFile);
 
@@ -80,6 +84,11 @@ app.on("activate", () => {
 
 // IPC Handlers for Kubernetes operations
 const kubeService = new KubernetesService();
+const portForwardManager = new PortForwardManager();
+
+app.on("before-quit", () => {
+  portForwardManager.stopAll();
+});
 
 type InstallTool = "azure-cli" | "kubectl" | "kubelogin" | "all";
 
@@ -262,6 +271,28 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle("start-port-forward", async (_, request: PortForwardRequest) => {
+  try {
+    return await portForwardManager.start(request);
+  } catch (error) {
+    console.error("Error starting port-forward:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("get-port-forwards", () => {
+  return portForwardManager.list();
+});
+
+ipcMain.handle("stop-port-forward", (_, id: string) => {
+  try {
+    portForwardManager.stop(id);
+  } catch (error) {
+    console.error("Error stopping port-forward:", error);
+    throw error;
+  }
+});
 
 ipcMain.handle("get-configmaps", async (_, namespace: string, cluster: string) => {
   try {

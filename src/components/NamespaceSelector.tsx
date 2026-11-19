@@ -1,239 +1,252 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useClusterStore } from "../store/clusterStore";
-import { FiRefreshCw, FiSearch } from "react-icons/fi";
+import { addUniqueValue } from "../services/selectionFilters";
+import { FiPlus, FiRefreshCw, FiX } from "react-icons/fi";
 
+const AddIcon = FiPlus as React.ElementType;
 const RefreshIcon = FiRefreshCw as React.ElementType;
-const SearchIcon = FiSearch as React.ElementType;
+const CloseIcon = FiX as React.ElementType;
 
 const HISTORY_KEY = "ns-history";
 const LAST_NS_KEY = "last-selected-namespace";
 const LAST_NS_BY_CLUSTER_KEY = "last-selected-namespace-by-cluster";
+const SELECTED_NS_BY_CLUSTER_KEY = "selected-namespaces-by-cluster";
 const MAX_HISTORY = 10;
 
 function loadHistory(): string[] {
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
   } catch {
     return [];
   }
 }
 
-function saveToHistory(ns: string, clusterName?: string): void {
-  const prev = loadHistory().filter((n) => n !== ns);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify([ns, ...prev].slice(0, MAX_HISTORY)));
-  localStorage.setItem(LAST_NS_KEY, ns);
+function loadSavedNamespaces(clusterName?: string): string[] {
+  try {
+    if (clusterName) {
+      const selectedMap = JSON.parse(
+        localStorage.getItem(SELECTED_NS_BY_CLUSTER_KEY) || "{}"
+      ) as Record<string, unknown>;
+      const selected = selectedMap[clusterName];
+      if (Array.isArray(selected)) {
+        return selected.filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+      }
 
-  if (clusterName) {
-    try {
-      const map = JSON.parse(localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}") as Record<string, string>;
-      map[clusterName] = ns;
-      localStorage.setItem(LAST_NS_BY_CLUSTER_KEY, JSON.stringify(map));
-    } catch {}
+      const lastMap = JSON.parse(
+        localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}"
+      ) as Record<string, string>;
+      if (lastMap[clusterName]) {
+        return [lastMap[clusterName]];
+      }
+    }
+
+    const lastNamespace = localStorage.getItem(LAST_NS_KEY);
+    return lastNamespace ? [lastNamespace] : [];
+  } catch {
+    return [];
   }
 }
 
-function loadLastNamespace(clusterName?: string): string | null {
+function saveNamespaces(namespaces: string[], clusterName?: string): void {
+  if (!clusterName) return;
+
   try {
-    if (clusterName) {
-      const map = JSON.parse(localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}") as Record<string, string>;
-      if (map[clusterName]) return map[clusterName];
+    const selectedMap = JSON.parse(
+      localStorage.getItem(SELECTED_NS_BY_CLUSTER_KEY) || "{}"
+    ) as Record<string, string[]>;
+    selectedMap[clusterName] = namespaces;
+    localStorage.setItem(SELECTED_NS_BY_CLUSTER_KEY, JSON.stringify(selectedMap));
+
+    const activeNamespace = namespaces[namespaces.length - 1];
+    if (activeNamespace) {
+      const lastMap = JSON.parse(
+        localStorage.getItem(LAST_NS_BY_CLUSTER_KEY) || "{}"
+      ) as Record<string, string>;
+      lastMap[clusterName] = activeNamespace;
+      localStorage.setItem(LAST_NS_BY_CLUSTER_KEY, JSON.stringify(lastMap));
+      localStorage.setItem(LAST_NS_KEY, activeNamespace);
     }
-    return localStorage.getItem(LAST_NS_KEY);
   } catch {
-    return null;
+    // Persistence is a convenience; an unavailable localStorage must not block navigation.
   }
+}
+
+function saveToHistory(namespace: string): string[] {
+  const next = [namespace, ...loadHistory().filter((item) => item !== namespace)].slice(0, MAX_HISTORY);
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // Keep the in-memory history when localStorage is unavailable.
+  }
+  return next;
 }
 
 export const NamespaceSelector: React.FC = () => {
   const {
     selectedCluster,
     namespaces,
-    selectedNamespace,
+    selectedNamespaces,
     setNamespaces,
-    setSelectedNamespace,
+    setSelectedNamespaces,
     setLoading,
     setError,
   } = useClusterStore();
 
-  const [manualInput, setManualInput] = useState("");
-  const [useManual, setUseManual] = useState(false);
+  const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>(loadHistory);
-  const appliedManualNsRef = useRef(false);
 
-  useEffect(() => {
-    if (selectedCluster) {
-      setManualInput("");
-      setUseManual(false);
-      appliedManualNsRef.current = false;
-
-      // Apply the last namespace immediately so pods can load without waiting
-      // for namespace-list RBAC calls.
-      const lastNs = loadLastNamespace(selectedCluster.name);
-      if (lastNs) {
-        setSelectedNamespace(lastNs);
-      }
-
-      loadNamespaces();
-    }
-  }, [selectedCluster, setSelectedNamespace]);
-
-  useEffect(() => {
-    // Cuando los namespaces cargan exitosamente y no hay namespace seleccionado
-    if (!useManual && namespaces.length > 0 && !selectedNamespace) {
-      const lastNs = loadLastNamespace(selectedCluster?.name);
-      // Si existe un último namespace guardado y está en la lista, usarlo
-      if (lastNs && namespaces.some((n) => n.name === lastNs)) {
-        setSelectedNamespace(lastNs);
-      } else {
-        // Si no, usar el primero
-        setSelectedNamespace(namespaces[0].name);
-      }
-    }
-  }, [namespaces, useManual, selectedNamespace, selectedCluster, setSelectedNamespace]);
-
-  useEffect(() => {
-    // Cuando falla la carga automática, pre-rellenar y aplicar automáticamente el último namespace
-    if (useManual && !appliedManualNsRef.current) {
-      const lastNs = loadLastNamespace(selectedCluster?.name);
-      if (lastNs) {
-        setManualInput(lastNs);
-        setSelectedNamespace(lastNs);
-        appliedManualNsRef.current = true;
-      }
-    }
-  }, [useManual, selectedCluster, setSelectedNamespace]);
-
-  const loadNamespaces = async () => {
+  const loadNamespaces = useCallback(async () => {
     if (!selectedCluster) return;
 
     setLoading(true);
     setError(null);
-
     try {
       const result = await window.api.getNamespaces(selectedCluster.name);
       setNamespaces(result);
-      setUseManual(false);
-      if (result.length > 0 && !selectedNamespace) {
-        setSelectedNamespace(result[0].name);
+
+      const currentSelection = useClusterStore.getState().selectedNamespaces;
+      if (currentSelection.length === 0 && result.length > 0) {
+        const nextSelection = [result[0].name];
+        setSelectedNamespaces(nextSelection);
+        saveNamespaces(nextSelection, selectedCluster.name);
       }
     } catch (error) {
       setNamespaces([]);
-      setUseManual(true);
-
-      const lastNs = loadLastNamespace(selectedCluster.name);
-      if (lastNs) {
-        setSelectedNamespace(lastNs);
-        setManualInput(lastNs);
-        // Don't pollute the global error banner when we already have a saved namespace
-        // and pods are loading correctly. Only show it if there's no fallback.
-        setError(null);
-      } else {
+      const currentSelection = useClusterStore.getState().selectedNamespaces;
+      if (currentSelection.length === 0) {
         setError(
-          (error instanceof Error ? error.message : "Error loading namespaces") +
-            " — Puedes escribir el nombre del namespace manualmente."
+          `${error instanceof Error ? error.message : "Error loading namespaces"} - ` +
+          "Puedes escribir los namespaces manualmente."
         );
       }
       console.error("Error loading namespaces:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCluster, setError, setLoading, setNamespaces, setSelectedNamespaces]);
 
-  const applyManualNamespace = () => {
-    const ns = manualInput.trim();
-    if (!ns) return;
-    setSelectedNamespace(ns);
+  useEffect(() => {
+    if (!selectedCluster) {
+      setSelectedNamespaces([]);
+      setNamespaces([]);
+      return;
+    }
+
+    const savedNamespaces = loadSavedNamespaces(selectedCluster.name);
+    setInput("");
+    setSelectedNamespaces(savedNamespaces);
+    void loadNamespaces();
+  }, [selectedCluster, loadNamespaces, setNamespaces, setSelectedNamespaces]);
+
+  const suggestions = useMemo(() => {
+    const known = namespaces.map((namespace) => namespace.name);
+    return Array.from(new Set([...known, ...history])).filter(
+      (namespace) => !selectedNamespaces.includes(namespace)
+    );
+  }, [history, namespaces, selectedNamespaces]);
+
+  const addNamespace = () => {
+    if (!selectedCluster) return;
+
+    const nextSelection = addUniqueValue(selectedNamespaces, input);
+    if (nextSelection === selectedNamespaces) return;
+
+    const namespace = input.trim();
+    setSelectedNamespaces(nextSelection);
+    saveNamespaces(nextSelection, selectedCluster.name);
+    setHistory(saveToHistory(namespace));
+    setInput("");
     setError(null);
-    saveToHistory(ns, selectedCluster?.name);
-    setHistory(loadHistory());
   };
 
-  const handleManualKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") applyManualNamespace();
+  const removeNamespace = (namespace: string) => {
+    if (!selectedCluster) return;
+
+    const nextSelection = selectedNamespaces.filter((item) => item !== namespace);
+    setSelectedNamespaces(nextSelection);
+    saveNamespaces(nextSelection, selectedCluster.name);
   };
 
   if (!selectedCluster) {
-    return (
-      <div className="px-4 py-2 text-gray-500">Select a cluster first</div>
-    );
+    return <div className="px-4 py-2 text-gray-500">Selecciona primero un cluster</div>;
   }
 
-  if (useManual) {
-    return (
+  return (
+    <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-2/5 min-w-[14rem] flex-none">
           <input
             type="text"
-            list="ns-history-list"
-            value={manualInput}
-            onChange={(e) => setManualInput(e.target.value)}
-            onKeyDown={handleManualKeyDown}
-            placeholder="Escribe el namespace..."
-            className="px-3 py-2 border border-yellow-400 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 w-56"
-            autoFocus
+            list="namespace-suggestions"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addNamespace();
+              }
+            }}
+            placeholder="Escribe y agrega un namespace..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <datalist id="ns-history-list">
-            {history.map((ns) => (
-              <option key={ns} value={ns} />
+          <datalist id="namespace-suggestions">
+            {suggestions.map((namespace) => (
+              <option key={namespace} value={namespace} />
             ))}
           </datalist>
         </div>
         <button
-          onClick={applyManualNamespace}
-          disabled={!manualInput.trim()}
-          className="p-2 hover:bg-gray-100 rounded-lg transition disabled:opacity-40"
-          title="Aplicar namespace"
+          type="button"
+          onClick={addNamespace}
+          disabled={!input.trim()}
+          className="p-2 text-blue-700 hover:bg-blue-50 rounded-lg transition disabled:opacity-40"
+          title="Agregar namespace"
         >
-          <SearchIcon className="w-4 h-4" />
+          <AddIcon className="w-4 h-4" />
         </button>
         <button
-          onClick={loadNamespaces}
+          type="button"
+          onClick={() => void loadNamespaces()}
           className="p-2 hover:bg-gray-100 rounded-lg transition"
-          title="Reintentar carga automática"
+          title="Actualizar namespaces"
         >
           <RefreshIcon className="w-4 h-4" />
         </button>
-        {selectedNamespace && (
-          <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
-            Activo: <strong>{selectedNamespace}</strong>
+      </div>
+
+      <div className="flex flex-wrap gap-2 min-h-[1.75rem]">
+        {selectedNamespaces.length === 0 ? (
+          <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+            Agrega al menos un namespace para consultar pods.
           </span>
+        ) : (
+          selectedNamespaces.map((namespace, index) => (
+            <span
+              key={namespace}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                index === selectedNamespaces.length - 1
+                  ? "border-blue-300 bg-blue-50 text-blue-800"
+                  : "border-gray-300 bg-white text-gray-700"
+              }`}
+              title={index === selectedNamespaces.length - 1
+                ? "Namespace activo para Config Maps"
+                : "Namespace incluido en la consulta de pods"}
+            >
+              {namespace}
+              <button
+                type="button"
+                onClick={() => removeNamespace(namespace)}
+                className="rounded-full p-0.5 hover:bg-black hover:bg-opacity-10"
+                title={`Quitar ${namespace}`}
+                aria-label={`Quitar namespace ${namespace}`}
+              >
+                <CloseIcon className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          ))
         )}
       </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <select
-        value={selectedNamespace || ""}
-        onChange={(e) => {
-          setSelectedNamespace(e.target.value);
-          saveToHistory(e.target.value, selectedCluster?.name);
-        }}
-        className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        {namespaces.map((ns) => (
-          <option key={ns.name} value={ns.name}>
-            {ns.name}
-          </option>
-        ))}
-      </select>
-
-      <button
-        onClick={() => setUseManual(true)}
-        className="px-3 py-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
-        title="Escribir namespace manualmente"
-      >
-        Manual
-      </button>
-
-      <button
-        onClick={loadNamespaces}
-        className="p-2 hover:bg-gray-100 rounded-lg transition"
-        title="Refresh namespaces"
-      >
-        <RefreshIcon className="w-4 h-4" />
-      </button>
     </div>
   );
 };

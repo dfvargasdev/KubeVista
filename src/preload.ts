@@ -1,4 +1,8 @@
 import { ipcRenderer, contextBridge } from "electron";
+import type {
+  PortForwardRequest,
+  PortForwardSession,
+} from "./services/portForwardManager";
 
 interface PodLogsOptions {
   lines?: number;
@@ -41,6 +45,9 @@ interface IpcApi {
     cluster: string,
     command: string
   ) => Promise<{ success: boolean; stdout: string; stderr: string }>;
+  startPortForward: (request: PortForwardRequest) => Promise<PortForwardSession>;
+  getPortForwards: () => Promise<PortForwardSession[]>;
+  stopPortForward: (id: string) => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   installTool: (tool: "azure-cli" | "kubectl" | "kubelogin" | "all") => Promise<{ message: string }>;
   azureLogin: () => Promise<{ message: string }>;
@@ -77,6 +84,10 @@ const api: IpcApi = {
     ipcRenderer.invoke("update-configmap", namespace, name, data, cluster),
   execPodCommand: (namespace: string, podName: string, containerName: string, cluster: string, command: string) =>
     ipcRenderer.invoke("exec-pod-command", namespace, podName, containerName, cluster, command),
+  startPortForward: (request: PortForwardRequest) =>
+    ipcRenderer.invoke("start-port-forward", request),
+  getPortForwards: () => ipcRenderer.invoke("get-port-forwards"),
+  stopPortForward: (id: string) => ipcRenderer.invoke("stop-port-forward", id),
   openExternalUrl: (url: string) => ipcRenderer.invoke("open-external-url", url),
   installTool: (tool: "azure-cli" | "kubectl" | "kubelogin" | "all") =>
     ipcRenderer.invoke("install-tool", tool),

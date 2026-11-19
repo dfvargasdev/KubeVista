@@ -12,6 +12,21 @@ interface ServiceLogsResult {
   generatedAt: string;
 }
 
+interface PortForwardRequest {
+  cluster: string;
+  namespace: string;
+  podName: string;
+  remotePort: number;
+  localPort: number;
+}
+
+interface PortForwardSession extends PortForwardRequest {
+  id: string;
+  address: string;
+  url: string;
+  startedAt: string;
+}
+
 interface Window {
   api: {
     getClusters: () => Promise<any>;
@@ -40,6 +55,9 @@ interface Window {
       cluster: string,
       command: string
     ) => Promise<{ success: boolean; stdout: string; stderr: string }>;
+    startPortForward: (request: PortForwardRequest) => Promise<PortForwardSession>;
+    getPortForwards: () => Promise<PortForwardSession[]>;
+    stopPortForward: (id: string) => Promise<void>;
     openExternalUrl: (url: string) => Promise<void>;
     installTool: (tool: "azure-cli" | "kubectl" | "kubelogin" | "all") => Promise<{ message: string }>;
     azureLogin: () => Promise<{ message: string }>;

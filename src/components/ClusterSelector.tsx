@@ -34,7 +34,14 @@ function loadLastNamespaceForCluster(clusterName: string): string | null {
 }
 
 export const ClusterSelector: React.FC = () => {
-  const { clusters, selectedCluster, setSelectedCluster, setSelectedNamespace, setLoading, setClusters } = useClusterStore();
+  const {
+    clusters,
+    selectedCluster,
+    setSelectedCluster,
+    setSelectedNamespaces,
+    setLoading,
+    setClusters,
+  } = useClusterStore();
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
@@ -60,7 +67,7 @@ export const ClusterSelector: React.FC = () => {
           // Set both in the same synchronous block so React batches them into one render.
           // This guarantees PodList sees selectedCluster && selectedNamespace together.
           setSelectedCluster(chosenCluster);
-          if (lastNs) setSelectedNamespace(lastNs);
+          setSelectedNamespaces(lastNs ? [lastNs] : []);
         }
       } catch (error) {
         console.error("Error loading clusters:", error);
@@ -70,7 +77,7 @@ export const ClusterSelector: React.FC = () => {
     };
 
     loadClusters();
-  }, [selectedCluster, setClusters, setLoading, setSelectedCluster]);
+  }, [selectedCluster, setClusters, setLoading, setSelectedCluster, setSelectedNamespaces]);
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -106,7 +113,7 @@ export const ClusterSelector: React.FC = () => {
               onClick={() => {
                 const lastNs = loadLastNamespaceForCluster(cluster.name);
                 setSelectedCluster(cluster);
-                if (lastNs) setSelectedNamespace(lastNs);
+                setSelectedNamespaces(lastNs ? [lastNs] : []);
                 saveLastClusterName(cluster.name);
                 setIsOpen(false);
               }}

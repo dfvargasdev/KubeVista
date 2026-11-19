@@ -6,6 +6,7 @@ interface ClusterStore {
   selectedCluster: Cluster | null;
   namespaces: Namespace[];
   selectedNamespace: string | null;
+  selectedNamespaces: string[];
   pods: Pod[];
   loading: boolean;
   error: string | null;
@@ -14,6 +15,7 @@ interface ClusterStore {
   setSelectedCluster: (cluster: Cluster | null) => void;
   setNamespaces: (namespaces: Namespace[]) => void;
   setSelectedNamespace: (namespace: string | null) => void;
+  setSelectedNamespaces: (namespaces: string[]) => void;
   setPods: (pods: Pod[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -24,6 +26,7 @@ export const useClusterStore = create<ClusterStore>((set) => ({
   selectedCluster: null,
   namespaces: [],
   selectedNamespace: null,
+  selectedNamespaces: [],
   pods: [],
   loading: false,
   error: null,
@@ -32,6 +35,10 @@ export const useClusterStore = create<ClusterStore>((set) => ({
   setSelectedCluster: (selectedCluster) => set({ selectedCluster }),
   setNamespaces: (namespaces) => set({ namespaces }),
   setSelectedNamespace: (selectedNamespace) => set({ selectedNamespace }),
+  setSelectedNamespaces: (selectedNamespaces) => set({
+    selectedNamespaces,
+    selectedNamespace: selectedNamespaces[selectedNamespaces.length - 1] || null,
+  }),
   setPods: (pods) => set({ pods }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),

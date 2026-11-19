@@ -8,53 +8,24 @@ import { FiAlertCircle } from "react-icons/fi";
 
 const AlertIcon = FiAlertCircle as React.ElementType;
 
-interface DashboardProps {
-  onGoHome?: () => void;
-}
-
-export const Dashboard: React.FC<DashboardProps> = ({ onGoHome }) => {
-  const { loading, error } = useClusterStore();
+export const Dashboard: React.FC = () => {
+  const { error } = useClusterStore();
   const [activeTab, setActiveTab] = useState<"pods" | "configmaps">("pods");
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold">KV</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">KubeVista</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {loading && (
-              <span className="text-sm text-gray-500">Loading...</span>
-            )}
-            {onGoHome && (
-              <button
-                onClick={onGoHome}
-                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
-              >
-                Menu inicial
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
+    <div className="h-full flex flex-col bg-gray-100">
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Controls Bar */}
         <div className="bg-white border-b border-gray-200 p-4 shadow-sm">
-          <div className="max-w-7xl mx-auto flex items-center gap-6">
-            <div className="flex-1">
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-6">
+            <div className="lg:w-80 lg:flex-none">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Cluster
               </label>
               <ClusterSelector />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Namespace
               </label>

@@ -85,6 +85,9 @@ ipcMain.handle("get-clusters", ...)
 ipcMain.handle("get-pods", ...)
 ipcMain.handle("get-namespaces", ...)
 ipcMain.handle("get-pod-logs", ...)
+ipcMain.handle("start-port-forward", ...)
+ipcMain.handle("get-port-forwards", ...)
+ipcMain.handle("stop-port-forward", ...)
 ```
 
 ### 2. **Kubernetes Service** (`src/services/kubernetesService.ts`)
@@ -355,6 +358,17 @@ lens-alternativa/
    ```typescript
    const data = await window.api.getMyData();
    ```
+
+## Seleccion multiple y estado global
+
+- `clusterStore` conserva la lista de namespaces seleccionados y mantiene el ultimo como
+  namespace activo para las vistas que todavia operan sobre un unico namespace, como Config Maps.
+- `PodList` consulta los namespaces en paralelo y usa `namespace/name` como identidad de UI para
+  evitar colisiones entre pods con el mismo nombre.
+- Los filtros guardados de pods se combinan con logica OR, de modo que se pueden observar varios
+  servicios simultaneamente.
+- `App` consulta `telepresence status` cada 15 segundos y expone el estado y las acciones rapidas
+  en un header comun a todas las vistas.
 
 ## Performance
 

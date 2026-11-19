@@ -118,6 +118,28 @@ Este proyecto está bajo la licencia MIT. Ver archivo `LICENSE` para más detall
 
 Para reportar bugs o sugerir features, crea un issue en el repositorio.
 
+## Port-forward de pods
+
+Los pods que declaran puertos TCP muestran una accion de enlace en la lista. Desde alli se
+puede seleccionar un puerto —por ejemplo, `pgadmin: 80/TCP`—, elegir el puerto local,
+iniciar `kubectl port-forward`, abrir la URL local y detener la sesion. KubeVista publica
+el puerto exclusivamente en `127.0.0.1` y cierra todos los port-forwards al salir de la
+aplicacion. El puerto local sugerido por defecto es `8888`, pero se puede editar antes de
+iniciar la sesion.
+
+## Vista multi-namespace y accesos globales
+
+El selector de namespaces permite escribir, agregar y quitar varios valores mediante
+etiquetas. La vista de pods combina los resultados de todos los namespaces seleccionados y
+mantiene cada accion asociada al namespace real del pod. El buscador de pods tambien permite
+guardar varios nombres o prefijos de servicio y muestra las coincidencias de cualquiera de
+ellos.
+
+El header permanece visible en toda la aplicacion. Incluye el acceso a `az login` y un
+indicador de Telepresence que se actualiza periodicamente: verde cuando existe una conexion
+activa y rojo cuando esta desconectado o no disponible. Al pulsar el indicador verde se cierra
+la conexion; al pulsarlo en rojo se abre la vista de Telepresence para elegir el contexto.
+
 ---
 
 Hecho con ❤️ para la comunidad de Kubernetes

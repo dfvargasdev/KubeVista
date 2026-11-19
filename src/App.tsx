@@ -1,6 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Dashboard } from "./components/Dashboard";
 import { PayloadEncryptor } from "./tools/payload-encryptor/PayloadEncryptor";
+import {
+  getTelepresenceContext,
+  isTelepresenceConnected,
+} from "./services/telepresenceStatus";
 import {
   FiBox,
   FiExternalLink,
@@ -8,12 +12,16 @@ import {
   FiHome,
   FiKey,
   FiPlayCircle,
+  FiRadio,
   FiTerminal,
+  FiX,
 } from "react-icons/fi";
 
 const HomeIcon = FiHome as React.ElementType;
 const ExternalLinkIcon = FiExternalLink as React.ElementType;
 const TerminalIcon = FiTerminal as React.ElementType;
+const TelepresenceIcon = FiRadio as React.ElementType;
+const CloseIcon = FiX as React.ElementType;
 
 type AppView = "home" | "clusters" | "telepresence" | "prerequisites" | "payload-encryptor";
 type InstallTool = "azure-cli" | "kubectl" | "kubelogin" | "all";
@@ -25,6 +33,7 @@ interface TelepresenceStatusSection {
 }
 
 type ActionTone = "info" | "success" | "error";
+type TelepresenceConnectionState = "checking" | "connected" | "disconnected" | "unavailable";
 
 const quickLinks = {
   azureCli: "https://learn.microsoft.com/cli/azure/install-azure-cli-windows",
@@ -41,12 +50,42 @@ function App() {
   const [actionMessage, setActionMessage] = useState<string>("");
   const [actionTone, setActionTone] = useState<ActionTone>("info");
   const [telepresenceLoading, setTelepresenceLoading] = useState(false);
+  const [telepresenceConnectionState, setTelepresenceConnectionState] =
+    useState<TelepresenceConnectionState>("checking");
+  const [telepresenceConnectedContext, setTelepresenceConnectedContext] = useState("");
   const [telepresenceClusters, setTelepresenceClusters] = useState<string[]>([]);
   const [telepresenceClusterContext, setTelepresenceClusterContext] = useState<string>("");
   const [telepresenceStatusSections, setTelepresenceStatusSections] =
     useState<TelepresenceStatusSection[] | null>(null);
   const [telepresenceConnectSection, setTelepresenceConnectSection] =
     useState<TelepresenceStatusSection | null>(null);
+
+  const refreshTelepresenceConnection = useCallback(async () => {
+    try {
+      const result = await window.api.telepresenceStatus();
+      if (!result.success) {
+        setTelepresenceConnectionState("unavailable");
+        setTelepresenceConnectedContext("");
+        return;
+      }
+
+      const connected = isTelepresenceConnected(result);
+      setTelepresenceConnectionState(connected ? "connected" : "disconnected");
+      setTelepresenceConnectedContext(connected ? getTelepresenceContext(result) || "" : "");
+    } catch {
+      setTelepresenceConnectionState("unavailable");
+      setTelepresenceConnectedContext("");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshTelepresenceConnection();
+    const interval = window.setInterval(() => {
+      void refreshTelepresenceConnection();
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [refreshTelepresenceConnection]);
 
   const homeCards = useMemo(
     () => [
@@ -228,6 +267,10 @@ function App() {
       const details = [result.stdout, result.stderr].filter(Boolean).join("\n");
       if (result.success) {
         setTelepresenceConnectSection(parseTelepresenceConnect(details));
+        setTelepresenceConnectionState("connected");
+        setTelepresenceConnectedContext(
+          getTelepresenceContext(result) || telepresenceClusterContext
+        );
         setActionTone("success");
         setActionMessage("Conexion establecida correctamente.");
       } else {
@@ -252,16 +295,23 @@ function App() {
       const details = [result.stdout, result.stderr].filter(Boolean).join("\n");
       if (result.success) {
         const parsed = parseTelepresenceStatus(details);
+        const connected = isTelepresenceConnected(result);
         setTelepresenceStatusSections(parsed.length ? parsed : null);
+        setTelepresenceConnectionState(connected ? "connected" : "disconnected");
+        setTelepresenceConnectedContext(connected ? getTelepresenceContext(result) || "" : "");
         setActionTone("success");
         setActionMessage("Estado de Telepresence actualizado.");
       } else {
         setTelepresenceStatusSections(null);
+        setTelepresenceConnectionState("unavailable");
+        setTelepresenceConnectedContext("");
         setActionTone("error");
         setActionMessage(`No se pudo consultar status.\n${details}`);
       }
     } catch (error) {
       setTelepresenceStatusSections(null);
+      setTelepresenceConnectionState("unavailable");
+      setTelepresenceConnectedContext("");
       setActionTone("error");
       setActionMessage(`Error consultando status: ${String(error)}`);
     } finally {
@@ -279,6 +329,8 @@ function App() {
       const result = await window.api.telepresenceQuit();
       const details = [result.stdout, result.stderr].filter(Boolean).join("\n");
       if (result.success) {
+        setTelepresenceConnectionState("disconnected");
+        setTelepresenceConnectedContext("");
         setActionTone("success");
         setActionMessage(`Telepresence desconectado.\n${details}`);
       } else {
@@ -293,49 +345,100 @@ function App() {
     }
   };
 
-  if (view === "clusters") {
-    return (
-      <div className="app">
-        <Dashboard onGoHome={() => setView("home")} />
-      </div>
-    );
-  }
+  const handleHeaderTelepresenceClick = () => {
+    if (telepresenceConnectionState === "connected") {
+      void handleTelepresenceQuit();
+      return;
+    }
+
+    setView("telepresence");
+    void refreshTelepresenceConnection();
+  };
+
+  const telepresenceConnected = telepresenceConnectionState === "connected";
+  const telepresenceChecking = telepresenceConnectionState === "checking" || telepresenceLoading;
+  const telepresenceLabel = telepresenceConnected
+    ? "Telepresence conectado"
+    : telepresenceConnectionState === "unavailable"
+    ? "Telepresence no disponible"
+    : telepresenceConnectionState === "checking"
+    ? "Consultando Telepresence"
+    : "Telepresence desconectado";
+  const telepresenceTooltip = telepresenceConnected
+    ? `Conectado al contexto: ${telepresenceConnectedContext || "no identificado"}`
+    : telepresenceLabel;
 
   return (
-    <div className="h-screen overflow-auto bg-gray-100 text-gray-900">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="h-screen flex flex-col overflow-hidden bg-gray-100 text-gray-900">
+      <header className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm z-40">
+        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+            <button
+              type="button"
+              onClick={() => setView("home")}
+              className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-sm hover:bg-blue-700 transition"
+              title="Ir al menu inicial"
+            >
               KV
-            </div>
+            </button>
             <div>
-              <h1 className="text-2xl font-bold">KubeVista</h1>
-              <p className="text-xs text-gray-500">Version 2 - Centro de inicio</p>
+              <h1 className="text-xl sm:text-2xl font-bold leading-tight">KubeVista</h1>
+              <p className="hidden sm:block text-xs text-gray-500">Kubernetes Cluster Manager</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div className="relative group">
+              <button
+                type="button"
+                onClick={handleHeaderTelepresenceClick}
+                disabled={telepresenceChecking}
+                className={`inline-flex items-center justify-center p-2.5 rounded-md text-white transition disabled:opacity-60 ${
+                  telepresenceConnected
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
+                aria-label={telepresenceTooltip}
+                aria-describedby="telepresence-header-tooltip"
+              >
+                <TelepresenceIcon className={`w-4 h-4 ${telepresenceChecking ? "animate-pulse" : ""}`} />
+              </button>
+              <div
+                id="telepresence-header-tooltip"
+                role="tooltip"
+                className="pointer-events-none invisible absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+              >
+                {telepresenceTooltip}
+                <span className="absolute -top-1 right-4 h-2 w-2 rotate-45 bg-gray-900" />
+              </div>
+            </div>
             <button
               onClick={runAzureLogin}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-600 text-sm text-white hover:bg-emerald-700"
+              className="inline-flex items-center gap-2 px-2.5 sm:px-3 py-2 rounded-md border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+              title="Reautenticar Azure CLI"
             >
               <TerminalIcon className="w-4 h-4" />
-              Reautenticar (az login)
+              <span className="hidden lg:inline">Reautenticar (az login)</span>
             </button>
             {view !== "home" && (
               <button
                 onClick={() => setView("home")}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm hover:bg-gray-50"
+                className="inline-flex items-center gap-2 px-2.5 sm:px-3 py-2 rounded-md border border-gray-300 text-sm hover:bg-gray-50"
+                title="Menu inicial"
               >
                 <HomeIcon className="w-4 h-4" />
-                Menu inicial
+                <span className="hidden sm:inline">Menu inicial</span>
               </button>
             )}
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-6 space-y-6">
+      <main className="flex-1 min-h-0 overflow-hidden">
+        {view === "clusters" ? (
+          <Dashboard />
+        ) : (
+        <div className="h-full overflow-auto">
+        <div className="max-w-6xl mx-auto p-6 space-y-6">
         {view === "home" && (
           <section className="space-y-4">
             <h2 className="text-xl font-semibold">Selecciona una opcion</h2>
@@ -581,24 +684,40 @@ function App() {
           <PayloadEncryptor />
         )}
 
-        {actionMessage && (
-          <div
-            className={`text-sm rounded-lg p-3 whitespace-pre-wrap ${
-              actionTone === "success"
-                ? "bg-green-50 border border-green-200 text-green-900"
-                : actionTone === "error"
-                ? "bg-red-50 border border-red-200 text-red-900"
-                : "bg-white border border-gray-200 text-gray-800"
-            }`}
-          >
-            {actionMessage}
-          </div>
+        </div>
+        </div>
         )}
       </main>
 
-      <footer className="bg-white border-t border-gray-200 px-6 py-3 text-xs text-gray-500">
-        <p>KubeVista - Kubernetes Cluster Manager - Diego Vargas (dfVargasDev)</p>
-      </footer>
+      {actionMessage && (
+        <div
+          className={`fixed bottom-5 right-5 z-50 max-w-lg flex items-start gap-3 rounded-lg border p-3 text-sm shadow-lg whitespace-pre-wrap ${
+            actionTone === "success"
+              ? "bg-green-50 border-green-200 text-green-900"
+              : actionTone === "error"
+              ? "bg-red-50 border-red-200 text-red-900"
+              : "bg-white border-gray-200 text-gray-800"
+          }`}
+          role="status"
+        >
+          <span className="flex-1">{actionMessage}</span>
+          <button
+            type="button"
+            onClick={() => setActionMessage("")}
+            className="rounded p-0.5 opacity-60 hover:bg-black hover:bg-opacity-10 hover:opacity-100"
+            title="Cerrar mensaje"
+            aria-label="Cerrar mensaje"
+          >
+            <CloseIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {view !== "clusters" && (
+        <footer className="flex-shrink-0 bg-white border-t border-gray-200 px-6 py-3 text-xs text-gray-500">
+          <p>KubeVista - Kubernetes Cluster Manager - Diego Vargas (dfVargasDev)</p>
+        </footer>
+      )}
     </div>
   );
 }
